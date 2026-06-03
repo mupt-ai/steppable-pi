@@ -1,6 +1,6 @@
 # @earendil-works/pi-web-ui
 
-Reusable web UI components for building AI chat interfaces powered by [@earendil-works/pi-ai](../ai) and [@mupt-ai/pi-agent-core](../agent).
+Reusable web UI components for building AI chat interfaces powered by [@mupt-ai/pi-ai](../ai) and [@mupt-ai/pi-agent-core](../agent).
 
 Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and Tailwind CSS v4.
 
@@ -17,7 +17,7 @@ Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and T
 ## Installation
 
 ```bash
-npm install @earendil-works/pi-web-ui @mupt-ai/pi-agent-core @earendil-works/pi-ai
+npm install @earendil-works/pi-web-ui @mupt-ai/pi-agent-core @mupt-ai/pi-ai
 ```
 
 ## Quick Start
@@ -26,7 +26,7 @@ See the [example](./example) directory for a complete working application.
 
 ```typescript
 import { Agent } from '@mupt-ai/pi-agent-core';
-import { getModel } from '@earendil-works/pi-ai';
+import { getModel } from '@mupt-ai/pi-ai';
 import {
   ChatPanel,
   AppStorage,

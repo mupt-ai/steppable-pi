@@ -648,6 +648,6 @@ MIT
 
 ## See Also
 
-- [@earendil-works/pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai): Core LLM toolkit
+- [@mupt-ai/pi-ai](https://www.npmjs.com/package/@mupt-ai/pi-ai): Core LLM toolkit
 - [@mupt-ai/pi-agent-core](https://www.npmjs.com/package/@mupt-ai/pi-agent-core): Agent framework
 - [@earendil-works/pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui): Terminal UI components

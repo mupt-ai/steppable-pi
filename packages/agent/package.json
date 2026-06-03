@@ -30,10 +30,10 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@earendil-works/pi-ai": "^0.75.0",
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
-		"yaml": "^2.8.2"
+		"yaml": "^2.8.2",
+		"@mupt-ai/pi-ai": "^0.75.0-mupt.2"
 	},
 	"keywords": [
 		"ai",

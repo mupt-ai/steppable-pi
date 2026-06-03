@@ -8,8 +8,8 @@
  * Token stats come from ctx.sessionManager/ctx.model (already accessible).
  */
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import type { AssistantMessage } from "@mupt-ai/pi-ai";
 import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 
 export default function (pi: ExtensionAPI) {

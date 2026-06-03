@@ -7,15 +7,6 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-	type AssistantMessage,
-	getProviders,
-	type ImageContent,
-	type Message,
-	type Model,
-	type OAuthProviderId,
-	type OAuthSelectPrompt,
-} from "@earendil-works/pi-ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -47,6 +38,15 @@ import {
 	visibleWidth,
 } from "@earendil-works/pi-tui";
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
+import {
+	type AssistantMessage,
+	getProviders,
+	type ImageContent,
+	type Message,
+	type Model,
+	type OAuthProviderId,
+	type OAuthSelectPrompt,
+} from "@mupt-ai/pi-ai";
 import { spawn, spawnSync } from "child_process";
 import {
 	APP_NAME,
@@ -4795,6 +4795,11 @@ export class InteractiveMode {
 						dialog.showWaiting("Waiting for browser authentication...");
 					}
 					// For Anthropic: onPrompt is called immediately after
+				},
+
+				onDeviceCode: (info) => {
+					dialog.showDeviceCode(info);
+					dialog.showWaiting("Waiting for device authorization...");
 				},
 
 				onPrompt: async (prompt: { message: string; placeholder?: string }) => {

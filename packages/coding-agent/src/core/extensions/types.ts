@@ -9,19 +9,6 @@
  */
 
 import type {
-	Api,
-	AssistantMessageEvent,
-	AssistantMessageEventStream,
-	Context,
-	ImageContent,
-	Model,
-	OAuthCredentials,
-	OAuthLoginCallbacks,
-	SimpleStreamOptions,
-	TextContent,
-	ToolResultMessage,
-} from "@earendil-works/pi-ai";
-import type {
 	AutocompleteItem,
 	AutocompleteProvider,
 	Component,
@@ -39,6 +26,19 @@ import type {
 	ThinkingLevel,
 	ToolExecutionMode,
 } from "@mupt-ai/pi-agent-core";
+import type {
+	Api,
+	AssistantMessageEvent,
+	AssistantMessageEventStream,
+	Context,
+	ImageContent,
+	Model,
+	OAuthCredentials,
+	OAuthLoginCallbacks,
+	SimpleStreamOptions,
+	TextContent,
+	ToolResultMessage,
+} from "@mupt-ai/pi-ai";
 import type { Static, TSchema } from "typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
 import type { BashResult } from "../bash-executor.js";
