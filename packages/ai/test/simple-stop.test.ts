@@ -1,39 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamSimple } from "../src/stream.ts";
-import type { Api, Context, Model, SimpleStreamOptions } from "../src/types.ts";
+import type { Model, SimpleStreamOptions } from "../src/types.ts";
+import { captureSimplePayload, makeSimpleContext } from "./simple-options-test-helpers.ts";
 
-class PayloadCaptured extends Error {
-	constructor() {
-		super("payload captured");
-		this.name = "PayloadCaptured";
-	}
-}
-
-function makeContext(): Context {
-	return {
-		messages: [{ role: "user", content: "Say hello and stop when instructed.", timestamp: Date.now() }],
-	};
-}
-
-async function capturePayload<TPayload>(model: Model<Api>, options: SimpleStreamOptions): Promise<TPayload> {
-	let capturedPayload: TPayload | undefined;
-
-	const stream = streamSimple(model, makeContext(), {
-		...options,
-		onPayload: (payload) => {
-			capturedPayload = payload as TPayload;
-			throw new PayloadCaptured();
-		},
-	});
-
-	await stream.result();
-
-	if (!capturedPayload) {
-		throw new Error("Expected payload to be captured before provider request");
-	}
-	return capturedPayload;
-}
+const context = makeSimpleContext("Say hello and stop when instructed.");
 
 describe("streamSimple stop", () => {
 	it("maps OpenAI-compatible stop directly", async () => {
@@ -44,7 +15,7 @@ describe("streamSimple stop", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ stop?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ stop?: unknown }>(model, {
 			apiKey: "fake-key",
 			stop: ["END"],
 		});
@@ -58,7 +29,7 @@ describe("streamSimple stop", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ stop_sequences?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ stop_sequences?: unknown }>(model, {
 			apiKey: "fake-key",
 			stop: "END",
 		});
@@ -67,7 +38,7 @@ describe("streamSimple stop", () => {
 	});
 
 	it("maps Bedrock stop to inferenceConfig stopSequences", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			inferenceConfig?: { stopSequences?: unknown };
 		}>(getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"), {
 			stop: ["END"],
@@ -77,7 +48,7 @@ describe("streamSimple stop", () => {
 	});
 
 	it("maps Google stop to config stopSequences", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { stopSequences?: unknown };
 		}>(getModel("google", "gemini-2.5-flash"), {
 			apiKey: "fake-key",
@@ -88,7 +59,7 @@ describe("streamSimple stop", () => {
 	});
 
 	it("maps Google Vertex stop to config stopSequences", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { stopSequences?: unknown };
 		}>(getModel("google-vertex", "gemini-2.5-flash"), {
 			apiKey: "fake-key",
@@ -104,7 +75,7 @@ describe("streamSimple stop", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ stop?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ stop?: unknown }>(model, {
 			apiKey: "fake-key",
 			stop: ["END"],
 		});
@@ -118,7 +89,7 @@ describe("streamSimple stop", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			stop: "END",
 		}).result();
@@ -133,7 +104,7 @@ describe("streamSimple stop", () => {
 			baseUrl: "https://example.openai.azure.com",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			azureDeploymentName: "gpt-5.4-mini",
 			stop: "END",

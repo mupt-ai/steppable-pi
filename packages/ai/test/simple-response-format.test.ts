@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamSimple } from "../src/stream.ts";
-import type { Api, Context, Model, ResponseFormat, SimpleStreamOptions } from "../src/types.ts";
-
-class PayloadCaptured extends Error {
-	constructor() {
-		super("payload captured");
-		this.name = "PayloadCaptured";
-	}
-}
+import type { Model, ResponseFormat, SimpleStreamOptions } from "../src/types.ts";
+import { captureSimplePayload, makeSimpleContext } from "./simple-options-test-helpers.ts";
 
 const schema = {
 	type: "object",
@@ -29,30 +23,7 @@ const jsonSchemaFormat: ResponseFormat = {
 	},
 };
 
-function makeContext(): Context {
-	return {
-		messages: [{ role: "user", content: "Return JSON with ok=true.", timestamp: Date.now() }],
-	};
-}
-
-async function capturePayload<TPayload>(model: Model<Api>, options: SimpleStreamOptions): Promise<TPayload> {
-	let capturedPayload: TPayload | undefined;
-
-	const stream = streamSimple(model, makeContext(), {
-		...options,
-		onPayload: (payload) => {
-			capturedPayload = payload as TPayload;
-			throw new PayloadCaptured();
-		},
-	});
-
-	await stream.result();
-
-	if (!capturedPayload) {
-		throw new Error("Expected payload to be captured before provider request");
-	}
-	return capturedPayload;
-}
+const context = makeSimpleContext("Return JSON with ok=true.");
 
 describe("streamSimple responseFormat", () => {
 	it("maps OpenAI-compatible json_schema to response_format", async () => {
@@ -63,10 +34,14 @@ describe("streamSimple responseFormat", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ response_format?: unknown }>(model, {
-			apiKey: "fake-key",
-			responseFormat: jsonSchemaFormat,
-		});
+		const payload = await captureSimplePayload<{ response_format?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.response_format).toEqual({
 			type: "json_schema",
@@ -85,10 +60,14 @@ describe("streamSimple responseFormat", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ text?: { format?: unknown } }>(model, {
-			apiKey: "fake-key",
-			responseFormat: jsonSchemaFormat,
-		});
+		const payload = await captureSimplePayload<{ text?: { format?: unknown } }>(
+			model,
+			{
+				apiKey: "fake-key",
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.text?.format).toEqual({
 			type: "json_schema",
@@ -105,11 +84,15 @@ describe("streamSimple responseFormat", () => {
 			baseUrl: "https://example.openai.azure.com",
 		};
 
-		const payload = await capturePayload<{ text?: { format?: unknown } }>(model, {
-			apiKey: "fake-key",
-			azureDeploymentName: "gpt-5.4-mini",
-			responseFormat: jsonSchemaFormat,
-		} as SimpleStreamOptions);
+		const payload = await captureSimplePayload<{ text?: { format?: unknown } }>(
+			model,
+			{
+				apiKey: "fake-key",
+				azureDeploymentName: "gpt-5.4-mini",
+				responseFormat: jsonSchemaFormat,
+			} as SimpleStreamOptions,
+			context,
+		);
 
 		expect(payload.text?.format).toEqual({
 			type: "json_schema",
@@ -126,10 +109,14 @@ describe("streamSimple responseFormat", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ output_config?: { format?: unknown } }>(model, {
-			apiKey: "fake-key",
-			responseFormat: jsonSchemaFormat,
-		});
+		const payload = await captureSimplePayload<{ output_config?: { format?: unknown } }>(
+			model,
+			{
+				apiKey: "fake-key",
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.output_config?.format).toEqual({
 			type: "json_schema",
@@ -143,7 +130,7 @@ describe("streamSimple responseFormat", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			responseFormat: { type: "json_object" },
 		}).result();
@@ -153,16 +140,20 @@ describe("streamSimple responseFormat", () => {
 	});
 
 	it("maps Bedrock json_schema to outputConfig textFormat", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			outputConfig?: {
 				textFormat?: {
 					type?: unknown;
 					structure?: { jsonSchema?: { name?: unknown; schema?: unknown; description?: unknown } };
 				};
 			};
-		}>(getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"), {
-			responseFormat: jsonSchemaFormat,
-		});
+		}>(
+			getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+			{
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.outputConfig?.textFormat?.type).toBe("json_schema");
 		expect(payload.outputConfig?.textFormat?.structure?.jsonSchema).toEqual({
@@ -175,7 +166,7 @@ describe("streamSimple responseFormat", () => {
 	it("rejects Bedrock json_object", async () => {
 		const message = await streamSimple(
 			getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
-			makeContext(),
+			context,
 			{ responseFormat: { type: "json_object" } },
 		).result();
 
@@ -184,35 +175,47 @@ describe("streamSimple responseFormat", () => {
 	});
 
 	it("maps Google json_object to JSON MIME type", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { responseMimeType?: unknown };
-		}>(getModel("google", "gemini-2.5-flash"), {
-			apiKey: "fake-key",
-			responseFormat: { type: "json_object" },
-		});
+		}>(
+			getModel("google", "gemini-2.5-flash"),
+			{
+				apiKey: "fake-key",
+				responseFormat: { type: "json_object" },
+			},
+			context,
+		);
 
 		expect(payload.config?.responseMimeType).toBe("application/json");
 	});
 
 	it("maps Google json_schema to responseJsonSchema", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { responseMimeType?: unknown; responseJsonSchema?: unknown };
-		}>(getModel("google", "gemini-2.5-flash"), {
-			apiKey: "fake-key",
-			responseFormat: jsonSchemaFormat,
-		});
+		}>(
+			getModel("google", "gemini-2.5-flash"),
+			{
+				apiKey: "fake-key",
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.config?.responseMimeType).toBe("application/json");
 		expect(payload.config?.responseJsonSchema).toEqual(schema);
 	});
 
 	it("maps Google Vertex json_schema to responseJsonSchema", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { responseMimeType?: unknown; responseJsonSchema?: unknown };
-		}>(getModel("google-vertex", "gemini-2.5-flash"), {
-			apiKey: "fake-key",
-			responseFormat: jsonSchemaFormat,
-		});
+		}>(
+			getModel("google-vertex", "gemini-2.5-flash"),
+			{
+				apiKey: "fake-key",
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.config?.responseMimeType).toBe("application/json");
 		expect(payload.config?.responseJsonSchema).toEqual(schema);
@@ -224,10 +227,14 @@ describe("streamSimple responseFormat", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ responseFormat?: unknown }>(model, {
-			apiKey: "fake-key",
-			responseFormat: jsonSchemaFormat,
-		});
+		const payload = await captureSimplePayload<{ responseFormat?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				responseFormat: jsonSchemaFormat,
+			},
+			context,
+		);
 
 		expect(payload.responseFormat).toEqual({
 			type: "json_schema",

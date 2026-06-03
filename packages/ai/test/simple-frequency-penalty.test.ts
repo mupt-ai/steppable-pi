@@ -1,39 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamSimple } from "../src/stream.ts";
-import type { Api, Context, Model, SimpleStreamOptions } from "../src/types.ts";
+import type { Model, SimpleStreamOptions } from "../src/types.ts";
+import { captureSimplePayload, makeSimpleContext } from "./simple-options-test-helpers.ts";
 
-class PayloadCaptured extends Error {
-	constructor() {
-		super("payload captured");
-		this.name = "PayloadCaptured";
-	}
-}
-
-function makeContext(): Context {
-	return {
-		messages: [{ role: "user", content: "Say hello.", timestamp: Date.now() }],
-	};
-}
-
-async function capturePayload<TPayload>(model: Model<Api>, options: SimpleStreamOptions): Promise<TPayload> {
-	let capturedPayload: TPayload | undefined;
-
-	const stream = streamSimple(model, makeContext(), {
-		...options,
-		onPayload: (payload) => {
-			capturedPayload = payload as TPayload;
-			throw new PayloadCaptured();
-		},
-	});
-
-	await stream.result();
-
-	if (!capturedPayload) {
-		throw new Error("Expected payload to be captured before provider request");
-	}
-	return capturedPayload;
-}
+const context = makeSimpleContext();
 
 describe("streamSimple frequencyPenalty", () => {
 	it("maps OpenAI-compatible frequencyPenalty to frequency_penalty", async () => {
@@ -44,7 +15,7 @@ describe("streamSimple frequencyPenalty", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ frequency_penalty?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ frequency_penalty?: unknown }>(model, {
 			apiKey: "fake-key",
 			frequencyPenalty: 0.2,
 		});
@@ -53,7 +24,7 @@ describe("streamSimple frequencyPenalty", () => {
 	});
 
 	it("maps Google frequencyPenalty to config frequencyPenalty", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { frequencyPenalty?: unknown };
 		}>(getModel("google", "gemini-2.5-flash"), {
 			apiKey: "fake-key",
@@ -64,7 +35,7 @@ describe("streamSimple frequencyPenalty", () => {
 	});
 
 	it("maps Google Vertex frequencyPenalty to config frequencyPenalty", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { frequencyPenalty?: unknown };
 		}>(getModel("google-vertex", "gemini-2.5-flash"), {
 			apiKey: "fake-key",
@@ -80,7 +51,7 @@ describe("streamSimple frequencyPenalty", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ frequencyPenalty?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ frequencyPenalty?: unknown }>(model, {
 			apiKey: "fake-key",
 			frequencyPenalty: 0.2,
 		});
@@ -94,7 +65,7 @@ describe("streamSimple frequencyPenalty", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			frequencyPenalty: 0.2,
 		}).result();
@@ -109,7 +80,7 @@ describe("streamSimple frequencyPenalty", () => {
 			baseUrl: "https://example.openai.azure.com",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			azureDeploymentName: "gpt-5.4-mini",
 			frequencyPenalty: 0.2,
@@ -125,7 +96,7 @@ describe("streamSimple frequencyPenalty", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			frequencyPenalty: 0.2,
 		}).result();
@@ -137,7 +108,7 @@ describe("streamSimple frequencyPenalty", () => {
 	it("rejects Bedrock frequencyPenalty", async () => {
 		const message = await streamSimple(
 			getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
-			makeContext(),
+			context,
 			{ frequencyPenalty: 0.2 },
 		).result();
 
