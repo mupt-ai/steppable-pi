@@ -14,6 +14,7 @@ import type {
 	Context,
 	Model,
 	ThinkingLevel as PiThinkingLevel,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -460,6 +461,7 @@ function buildParams(
 		...(context.systemPrompt && { systemInstruction: sanitizeSurrogates(context.systemPrompt) }),
 		...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
 	};
+	applyResponseFormat(config, options.responseFormat);
 
 	if (context.tools && context.tools.length > 0 && options.toolChoice) {
 		config.toolConfig = {
@@ -497,6 +499,14 @@ function buildParams(
 	};
 
 	return params;
+}
+
+function applyResponseFormat(config: GenerateContentConfig, format: ResponseFormat | undefined): void {
+	if (format === undefined || format.type === "text") return;
+	config.responseMimeType = "application/json";
+	if (format.type === "json_schema") {
+		config.responseJsonSchema = format.jsonSchema.schema;
+	}
 }
 
 type ClampedThinkingLevel = Exclude<PiThinkingLevel, "xhigh">;

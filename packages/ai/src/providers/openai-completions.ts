@@ -19,6 +19,7 @@ import type {
 	Message,
 	Model,
 	OpenAICompletionsCompat,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -542,6 +543,10 @@ function buildParams(
 		params.frequency_penalty = options.frequencyPenalty;
 	}
 
+	if (options?.responseFormat !== undefined) {
+		params.response_format = mapResponseFormat(options.responseFormat);
+	}
+
 	if (options?.stop !== undefined) {
 		params.stop = options.stop;
 	}
@@ -632,6 +637,23 @@ function buildParams(
 	}
 
 	return params;
+}
+
+function mapResponseFormat(
+	format: ResponseFormat,
+): OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming["response_format"] {
+	if (format.type === "json_schema") {
+		return {
+			type: "json_schema",
+			json_schema: {
+				name: format.jsonSchema.name,
+				schema: format.jsonSchema.schema,
+				...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+				...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
+			},
+		};
+	}
+	return { type: format.type };
 }
 
 function getCompatCacheControl(

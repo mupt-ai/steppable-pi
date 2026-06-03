@@ -15,6 +15,7 @@ export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptio
 		maxTokens: options?.maxTokens,
 		topP: options?.topP,
 		frequencyPenalty: options?.frequencyPenalty,
+		responseFormat: options?.responseFormat,
 		stop: options?.stop,
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,

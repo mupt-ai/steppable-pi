@@ -8,6 +8,7 @@ import type {
 	Context,
 	Model,
 	OpenAIResponsesCompat,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -264,6 +265,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		params.service_tier = options.serviceTier;
 	}
 
+	if (options?.responseFormat !== undefined) {
+		params.text = { format: mapResponseFormat(options.responseFormat) };
+	}
+
 	if (context.tools && context.tools.length > 0) {
 		params.tools = convertResponsesTools(context.tools);
 	}
@@ -290,6 +295,19 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	}
 
 	return params;
+}
+
+function mapResponseFormat(format: ResponseFormat): NonNullable<ResponseCreateParamsStreaming["text"]>["format"] {
+	if (format.type === "json_schema") {
+		return {
+			type: "json_schema",
+			name: format.jsonSchema.name,
+			schema: format.jsonSchema.schema,
+			...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+			...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
+		};
+	}
+	return { type: format.type };
 }
 
 function mapSimpleToolChoiceToResponsesToolChoice(

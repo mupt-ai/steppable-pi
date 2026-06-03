@@ -78,6 +78,19 @@ export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
 export type StopSequences = string | string[];
 
+export type ResponseFormat =
+	| { type: "text" }
+	| { type: "json_object" }
+	| {
+			type: "json_schema";
+			jsonSchema: {
+				name: string;
+				schema: Record<string, unknown>;
+				strict?: boolean;
+				description?: string;
+			};
+	  };
+
 export interface ProviderResponse {
 	status: number;
 	headers: Record<string, string>;
@@ -96,6 +109,10 @@ export interface StreamOptions {
 	 * Providers that do not support frequency penalties should reject this option explicitly.
 	 */
 	frequencyPenalty?: number;
+	/**
+	 * Requested text output format. Structured formats are provider-conditional.
+	 */
+	responseFormat?: ResponseFormat;
 	/**
 	 * Provider stop sequence(s). Generation stops when the model emits one of these strings.
 	 * Providers that do not support stop sequences should reject this option explicitly.

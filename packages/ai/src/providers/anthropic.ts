@@ -16,6 +16,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -1008,6 +1009,10 @@ function buildParams(
 		}
 	}
 
+	if (options?.responseFormat !== undefined) {
+		applyResponseFormat(params, options.responseFormat);
+	}
+
 	if (options?.toolChoice) {
 		if (typeof options.toolChoice === "string") {
 			params.tool_choice = { type: options.toolChoice };
@@ -1017,6 +1022,21 @@ function buildParams(
 	}
 
 	return params;
+}
+
+function applyResponseFormat(params: MessageCreateParamsStreaming, format: ResponseFormat): void {
+	if (format.type === "text") return;
+	if (format.type === "json_object") {
+		throw new Error("Anthropic streamSimple does not support responseFormat json_object");
+	}
+
+	params.output_config = {
+		...params.output_config,
+		format: {
+			type: "json_schema",
+			schema: format.jsonSchema.schema,
+		},
+	};
 }
 
 // Normalize tool call IDs to match Anthropic's required pattern and length
