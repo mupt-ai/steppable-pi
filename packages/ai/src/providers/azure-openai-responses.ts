@@ -251,6 +251,10 @@ function buildParams(
 	options: AzureOpenAIResponsesOptions | undefined,
 	deploymentName: string,
 ) {
+	if (options?.stop !== undefined) {
+		throw new Error("Azure OpenAI Responses streamSimple does not support stop sequences");
+	}
+
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS);
 
 	const params: ResponseCreateParamsStreaming = {

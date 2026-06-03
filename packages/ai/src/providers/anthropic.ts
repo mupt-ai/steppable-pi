@@ -33,7 +33,12 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 
 import { resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
-import { adjustMaxTokensForThinking, buildBaseOptions, mapSimpleToolChoiceToAnyToolChoice } from "./simple-options.ts";
+import {
+	adjustMaxTokensForThinking,
+	buildBaseOptions,
+	mapSimpleToolChoiceToAnyToolChoice,
+	normalizeStopSequences,
+} from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 /**
@@ -942,6 +947,10 @@ function buildParams(
 	// Temperature is incompatible with extended thinking and unsupported on Claude Opus 4.7+.
 	if (options?.temperature !== undefined && !options?.thinkingEnabled && compat.supportsTemperature) {
 		params.temperature = options.temperature;
+	}
+
+	if (options?.stop !== undefined) {
+		params.stop_sequences = normalizeStopSequences(options.stop);
 	}
 
 	if (context.tools && context.tools.length > 0) {

@@ -52,6 +52,7 @@ import {
 	buildBaseOptions,
 	clampReasoning,
 	mapSimpleToolChoiceToAnyToolChoice,
+	normalizeStopSequences,
 } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
@@ -203,6 +204,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				inferenceConfig: {
 					...(inferenceMaxTokens !== undefined && { maxTokens: inferenceMaxTokens }),
 					...(options.temperature !== undefined && { temperature: options.temperature }),
+					...(options.stop !== undefined && { stopSequences: normalizeStopSequences(options.stop) }),
 				},
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
 				additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
