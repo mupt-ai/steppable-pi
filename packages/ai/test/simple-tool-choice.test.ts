@@ -2,14 +2,8 @@ import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamSimple } from "../src/stream.ts";
-import type { Api, Context, Model, SimpleStreamOptions, Tool } from "../src/types.ts";
-
-class PayloadCaptured extends Error {
-	constructor() {
-		super("payload captured");
-		this.name = "PayloadCaptured";
-	}
-}
+import type { Context, Model, SimpleStreamOptions, Tool } from "../src/types.ts";
+import { captureSimplePayload } from "./simple-options-test-helpers.ts";
 
 const tool: Tool = {
 	name: "ping",
@@ -26,25 +20,6 @@ function makeContext(): Context {
 	};
 }
 
-async function capturePayload<TPayload>(model: Model<Api>, options: SimpleStreamOptions): Promise<TPayload> {
-	let capturedPayload: TPayload | undefined;
-
-	const stream = streamSimple(model, makeContext(), {
-		...options,
-		onPayload: (payload) => {
-			capturedPayload = payload as TPayload;
-			throw new PayloadCaptured();
-		},
-	});
-
-	await stream.result();
-
-	if (!capturedPayload) {
-		throw new Error("Expected payload to be captured before provider request");
-	}
-	return capturedPayload;
-}
-
 describe("streamSimple toolChoice", () => {
 	it("maps OpenAI-compatible any to required", async () => {
 		const baseModel = getModel("openai", "gpt-4o-mini");
@@ -54,10 +29,14 @@ describe("streamSimple toolChoice", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ tool_choice?: unknown }>(model, {
-			apiKey: "fake-key",
-			toolChoice: "any",
-		});
+		const payload = await captureSimplePayload<{ tool_choice?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				toolChoice: "any",
+			},
+			makeContext(),
+		);
 
 		expect(payload.tool_choice).toBe("required");
 	});
@@ -68,10 +47,14 @@ describe("streamSimple toolChoice", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ tool_choice?: unknown }>(model, {
-			apiKey: "fake-key",
-			toolChoice: "required",
-		});
+		const payload = await captureSimplePayload<{ tool_choice?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				toolChoice: "required",
+			},
+			makeContext(),
+		);
 
 		expect(payload.tool_choice).toEqual({ type: "any" });
 	});
@@ -82,20 +65,28 @@ describe("streamSimple toolChoice", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ tool_choice?: unknown }>(model, {
-			apiKey: "fake-key",
-			toolChoice: { type: "function", function: { name: "ping" } },
-		});
+		const payload = await captureSimplePayload<{ tool_choice?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				toolChoice: { type: "function", function: { name: "ping" } },
+			},
+			makeContext(),
+		);
 
 		expect(payload.tool_choice).toEqual({ type: "tool", name: "ping" });
 	});
 
 	it("maps Bedrock required to any", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			toolConfig?: { toolChoice?: unknown };
-		}>(getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"), {
-			toolChoice: "required",
-		});
+		}>(
+			getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+			{
+				toolChoice: "required",
+			},
+			makeContext(),
+		);
 
 		expect(payload.toolConfig?.toolChoice).toEqual({ any: {} });
 	});
@@ -106,10 +97,14 @@ describe("streamSimple toolChoice", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ toolChoice?: unknown }>(model, {
-			apiKey: "fake-key",
-			toolChoice: { type: "function", function: { name: "ping" } },
-		});
+		const payload = await captureSimplePayload<{ toolChoice?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				toolChoice: { type: "function", function: { name: "ping" } },
+			},
+			makeContext(),
+		);
 
 		expect(payload.toolChoice).toEqual({ type: "function", function: { name: "ping" } });
 	});
@@ -119,12 +114,16 @@ describe("streamSimple toolChoice", () => {
 			...getModel("google", "gemini-2.5-flash"),
 		};
 
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { toolConfig?: { functionCallingConfig?: { mode?: unknown } } };
-		}>(model, {
-			apiKey: "fake-key",
-			toolChoice: "required",
-		});
+		}>(
+			model,
+			{
+				apiKey: "fake-key",
+				toolChoice: "required",
+			},
+			makeContext(),
+		);
 
 		expect(payload.config?.toolConfig?.functionCallingConfig?.mode).toBe("ANY");
 	});
@@ -151,10 +150,14 @@ describe("streamSimple toolChoice", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ tool_choice?: unknown }>(model, {
-			apiKey: "fake-key",
-			toolChoice: { type: "function", function: { name: "ping" } },
-		});
+		const payload = await captureSimplePayload<{ tool_choice?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				toolChoice: { type: "function", function: { name: "ping" } },
+			},
+			makeContext(),
+		);
 
 		expect(payload.tool_choice).toEqual({ type: "function", name: "ping" });
 	});
@@ -165,11 +168,15 @@ describe("streamSimple toolChoice", () => {
 			baseUrl: "https://example.openai.azure.com",
 		};
 
-		const payload = await capturePayload<{ tool_choice?: unknown }>(model, {
-			apiKey: "fake-key",
-			azureDeploymentName: "gpt-5.4-mini",
-			toolChoice: "any",
-		} as SimpleStreamOptions);
+		const payload = await captureSimplePayload<{ tool_choice?: unknown }>(
+			model,
+			{
+				apiKey: "fake-key",
+				azureDeploymentName: "gpt-5.4-mini",
+				toolChoice: "any",
+			} as SimpleStreamOptions,
+			makeContext(),
+		);
 
 		expect(payload.tool_choice).toBe("required");
 	});

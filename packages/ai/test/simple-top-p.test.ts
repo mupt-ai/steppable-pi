@@ -1,39 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamSimple } from "../src/stream.ts";
-import type { Api, Context, Model, SimpleStreamOptions } from "../src/types.ts";
+import type { Model, SimpleStreamOptions } from "../src/types.ts";
+import { captureSimplePayload, makeSimpleContext } from "./simple-options-test-helpers.ts";
 
-class PayloadCaptured extends Error {
-	constructor() {
-		super("payload captured");
-		this.name = "PayloadCaptured";
-	}
-}
-
-function makeContext(): Context {
-	return {
-		messages: [{ role: "user", content: "Say hello.", timestamp: Date.now() }],
-	};
-}
-
-async function capturePayload<TPayload>(model: Model<Api>, options: SimpleStreamOptions): Promise<TPayload> {
-	let capturedPayload: TPayload | undefined;
-
-	const stream = streamSimple(model, makeContext(), {
-		...options,
-		onPayload: (payload) => {
-			capturedPayload = payload as TPayload;
-			throw new PayloadCaptured();
-		},
-	});
-
-	await stream.result();
-
-	if (!capturedPayload) {
-		throw new Error("Expected payload to be captured before provider request");
-	}
-	return capturedPayload;
-}
+const context = makeSimpleContext();
 
 describe("streamSimple topP", () => {
 	it("maps OpenAI-compatible topP to top_p", async () => {
@@ -44,7 +15,7 @@ describe("streamSimple topP", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ top_p?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ top_p?: unknown }>(model, {
 			apiKey: "fake-key",
 			topP: 0.8,
 		});
@@ -58,7 +29,7 @@ describe("streamSimple topP", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ top_p?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ top_p?: unknown }>(model, {
 			apiKey: "fake-key",
 			topP: 0.8,
 		});
@@ -72,7 +43,7 @@ describe("streamSimple topP", () => {
 			baseUrl: "https://example.openai.azure.com",
 		};
 
-		const payload = await capturePayload<{ top_p?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ top_p?: unknown }>(model, {
 			apiKey: "fake-key",
 			azureDeploymentName: "gpt-5.4-mini",
 			topP: 0.8,
@@ -82,7 +53,7 @@ describe("streamSimple topP", () => {
 	});
 
 	it("maps Bedrock topP to inferenceConfig topP", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			inferenceConfig?: { topP?: unknown };
 		}>(getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0"), {
 			topP: 0.8,
@@ -92,7 +63,7 @@ describe("streamSimple topP", () => {
 	});
 
 	it("maps Google topP to config topP", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { topP?: unknown };
 		}>(getModel("google", "gemini-2.5-flash"), {
 			apiKey: "fake-key",
@@ -103,7 +74,7 @@ describe("streamSimple topP", () => {
 	});
 
 	it("maps Google Vertex topP to config topP", async () => {
-		const payload = await capturePayload<{
+		const payload = await captureSimplePayload<{
 			config?: { topP?: unknown };
 		}>(getModel("google-vertex", "gemini-2.5-flash"), {
 			apiKey: "fake-key",
@@ -119,7 +90,7 @@ describe("streamSimple topP", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const payload = await capturePayload<{ topP?: unknown }>(model, {
+		const payload = await captureSimplePayload<{ topP?: unknown }>(model, {
 			apiKey: "fake-key",
 			topP: 0.8,
 		});
@@ -133,7 +104,7 @@ describe("streamSimple topP", () => {
 			baseUrl: "http://127.0.0.1:9",
 		};
 
-		const message = await streamSimple(model, makeContext(), {
+		const message = await streamSimple(model, context, {
 			apiKey: "fake-key",
 			topP: 0.8,
 		}).result();
