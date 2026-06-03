@@ -47,7 +47,12 @@ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { createHttpProxyAgentsForTarget } from "../utils/node-http-proxy.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning } from "./simple-options.ts";
+import {
+	adjustMaxTokensForThinking,
+	buildBaseOptions,
+	clampReasoning,
+	mapSimpleToolChoiceToAnyToolChoice,
+} from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 export type BedrockThinkingDisplay = "summarized" | "omitted";
@@ -345,14 +350,16 @@ export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", Simp
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
 	const base = buildBaseOptions(model, options, undefined);
+	const toolChoice = mapSimpleToolChoiceToAnyToolChoice(options?.toolChoice);
 	if (!options?.reasoning) {
-		return streamBedrock(model, context, { ...base, reasoning: undefined } satisfies BedrockOptions);
+		return streamBedrock(model, context, { ...base, toolChoice, reasoning: undefined } satisfies BedrockOptions);
 	}
 
 	if (isAnthropicClaudeModel(model)) {
 		if (supportsAdaptiveThinking(model.id, model.name)) {
 			return streamBedrock(model, context, {
 				...base,
+				toolChoice,
 				reasoning: options.reasoning,
 				thinkingBudgets: options.thinkingBudgets,
 			} satisfies BedrockOptions);
@@ -369,6 +376,7 @@ export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", Simp
 
 		return streamBedrock(model, context, {
 			...base,
+			toolChoice,
 			maxTokens: adjusted.maxTokens,
 			reasoning: options.reasoning,
 			thinkingBudgets: {
@@ -380,6 +388,7 @@ export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", Simp
 
 	return streamBedrock(model, context, {
 		...base,
+		toolChoice,
 		reasoning: options.reasoning,
 		thinkingBudgets: options.thinkingBudgets,
 	} satisfies BedrockOptions);
