@@ -254,6 +254,7 @@ function buildChatPayload(
 	if (options?.temperature !== undefined) payload.temperature = options.temperature;
 	if (options?.maxTokens !== undefined) payload.maxTokens = options.maxTokens;
 	if (options?.topP !== undefined) payload.topP = options.topP;
+	if (options?.frequencyPenalty !== undefined) payload.frequencyPenalty = options.frequencyPenalty;
 	if (options?.stop !== undefined) payload.stop = options.stop;
 	if (options?.toolChoice) payload.toolChoice = mapToolChoice(options.toolChoice);
 	if (options?.promptMode) payload.promptMode = options.promptMode;

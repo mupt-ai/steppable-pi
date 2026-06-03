@@ -953,6 +953,10 @@ function buildParams(
 		throw new Error("Anthropic streamSimple does not support topP for current Claude models");
 	}
 
+	if (options?.frequencyPenalty !== undefined) {
+		throw new Error("Anthropic streamSimple does not support frequencyPenalty");
+	}
+
 	if (options?.stop !== undefined) {
 		params.stop_sequences = normalizeStopSequences(options.stop);
 	}

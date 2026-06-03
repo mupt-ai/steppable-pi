@@ -448,6 +448,9 @@ function buildParams(
 	if (options.topP !== undefined) {
 		generationConfig.topP = options.topP;
 	}
+	if (options.frequencyPenalty !== undefined) {
+		generationConfig.frequencyPenalty = options.frequencyPenalty;
+	}
 	if (options.stop !== undefined) {
 		generationConfig.stopSequences = normalizeStopSequences(options.stop);
 	}

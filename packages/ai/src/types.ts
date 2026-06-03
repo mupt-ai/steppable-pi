@@ -92,6 +92,11 @@ export interface StreamOptions {
 	 */
 	topP?: number;
 	/**
+	 * Penalizes tokens based on prior frequency in the generated text.
+	 * Providers that do not support frequency penalties should reject this option explicitly.
+	 */
+	frequencyPenalty?: number;
+	/**
 	 * Provider stop sequence(s). Generation stops when the model emits one of these strings.
 	 * Providers that do not support stop sequences should reject this option explicitly.
 	 */

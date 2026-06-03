@@ -254,6 +254,9 @@ function buildParams(
 	if (options?.stop !== undefined) {
 		throw new Error("Azure OpenAI Responses streamSimple does not support stop sequences");
 	}
+	if (options?.frequencyPenalty !== undefined) {
+		throw new Error("Azure OpenAI Responses streamSimple does not support frequencyPenalty");
+	}
 
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS);
 
