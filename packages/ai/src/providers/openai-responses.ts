@@ -228,6 +228,10 @@ function createClient(
 }
 
 function buildParams(model: Model<"openai-responses">, context: Context, options?: OpenAIResponsesOptions) {
+	if (options?.stop !== undefined) {
+		throw new Error("OpenAI Responses streamSimple does not support stop sequences");
+	}
+
 	const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS);
 
 	const cacheRetention = resolveCacheRetention(options?.cacheRetention);

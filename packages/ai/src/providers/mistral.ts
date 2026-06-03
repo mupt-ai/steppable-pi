@@ -253,6 +253,7 @@ function buildChatPayload(
 	if (context.tools?.length) payload.tools = toFunctionTools(context.tools);
 	if (options?.temperature !== undefined) payload.temperature = options.temperature;
 	if (options?.maxTokens !== undefined) payload.maxTokens = options.maxTokens;
+	if (options?.stop !== undefined) payload.stop = options.stop;
 	if (options?.toolChoice) payload.toolChoice = mapToolChoice(options.toolChoice);
 	if (options?.promptMode) payload.promptMode = options.promptMode;
 	if (options?.reasoningEffort) payload.reasoningEffort = options.reasoningEffort;

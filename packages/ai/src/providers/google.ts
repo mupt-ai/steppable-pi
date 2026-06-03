@@ -30,7 +30,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.ts";
-import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice } from "./simple-options.ts";
+import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice, normalizeStopSequences } from "./simple-options.ts";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -358,6 +358,9 @@ function buildParams(
 	}
 	if (options.maxTokens !== undefined) {
 		generationConfig.maxOutputTokens = options.maxTokens;
+	}
+	if (options.stop !== undefined) {
+		generationConfig.stopSequences = normalizeStopSequences(options.stop);
 	}
 
 	const config: GenerateContentConfig = {

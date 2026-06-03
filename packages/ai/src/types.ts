@@ -76,6 +76,8 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
+export type StopSequences = string | string[];
+
 export interface ProviderResponse {
 	status: number;
 	headers: Record<string, string>;
@@ -84,6 +86,11 @@ export interface ProviderResponse {
 export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
+	/**
+	 * Provider stop sequence(s). Generation stops when the model emits one of these strings.
+	 * Providers that do not support stop sequences should reject this option explicitly.
+	 */
+	stop?: StopSequences;
 	signal?: AbortSignal;
 	apiKey?: string;
 	/**

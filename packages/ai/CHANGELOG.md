@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added first-class `streamSimple()` stop sequence support across provider adapters that support native stop fields.
 - Added first-class `streamSimple()` tool choice support across provider adapters.
 
 ### Fixed

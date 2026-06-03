@@ -3,6 +3,7 @@ import type {
 	Model,
 	SimpleStreamOptions,
 	SimpleToolChoice,
+	StopSequences,
 	StreamOptions,
 	ThinkingBudgets,
 	ThinkingLevel,
@@ -12,6 +13,7 @@ export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptio
 	return {
 		temperature: options?.temperature,
 		maxTokens: options?.maxTokens,
+		stop: options?.stop,
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
 		transport: options?.transport,
@@ -56,6 +58,11 @@ export function mapSimpleToolChoiceToGoogleChoice(
 	if (choice === "required") return "any";
 	if (choice === "auto" || choice === "none" || choice === "any") return choice;
 	return undefined;
+}
+
+export function normalizeStopSequences(stop: StopSequences | undefined): string[] | undefined {
+	if (stop === undefined) return undefined;
+	return Array.isArray(stop) ? stop : [stop];
 }
 
 export function adjustMaxTokensForThinking(
