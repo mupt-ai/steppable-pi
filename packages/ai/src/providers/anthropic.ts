@@ -949,6 +949,10 @@ function buildParams(
 		params.temperature = options.temperature;
 	}
 
+	if (options?.topP !== undefined) {
+		throw new Error("Anthropic streamSimple does not support topP for current Claude models");
+	}
+
 	if (options?.stop !== undefined) {
 		params.stop_sequences = normalizeStopSequences(options.stop);
 	}

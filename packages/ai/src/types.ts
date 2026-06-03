@@ -87,6 +87,11 @@ export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
 	/**
+	 * Nucleus sampling probability mass.
+	 * Providers that do not support top-p sampling should reject this option explicitly.
+	 */
+	topP?: number;
+	/**
 	 * Provider stop sequence(s). Generation stops when the model emits one of these strings.
 	 * Providers that do not support stop sequences should reject this option explicitly.
 	 */

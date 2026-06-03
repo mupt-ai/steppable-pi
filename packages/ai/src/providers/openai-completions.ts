@@ -534,6 +534,10 @@ function buildParams(
 		params.temperature = options.temperature;
 	}
 
+	if (options?.topP !== undefined) {
+		params.top_p = options.topP;
+	}
+
 	if (options?.stop !== undefined) {
 		params.stop = options.stop;
 	}
