@@ -5,6 +5,7 @@ import type {
 	CompletionEvent,
 	ContentChunk,
 	FunctionTool,
+	ResponseFormat as MistralResponseFormat,
 } from "@mistralai/mistralai/models/components";
 import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
@@ -12,6 +13,7 @@ import type {
 	Context,
 	Message,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -255,6 +257,7 @@ function buildChatPayload(
 	if (options?.maxTokens !== undefined) payload.maxTokens = options.maxTokens;
 	if (options?.topP !== undefined) payload.topP = options.topP;
 	if (options?.frequencyPenalty !== undefined) payload.frequencyPenalty = options.frequencyPenalty;
+	if (options?.responseFormat !== undefined) payload.responseFormat = mapResponseFormat(options.responseFormat);
 	if (options?.stop !== undefined) payload.stop = options.stop;
 	if (options?.toolChoice) payload.toolChoice = mapToolChoice(options.toolChoice);
 	if (options?.promptMode) payload.promptMode = options.promptMode;
@@ -617,6 +620,21 @@ function mapToolChoice(
 		type: "function",
 		function: { name: choice.function.name },
 	};
+}
+
+function mapResponseFormat(format: ResponseFormat): MistralResponseFormat {
+	if (format.type === "json_schema") {
+		return {
+			type: "json_schema",
+			jsonSchema: {
+				name: format.jsonSchema.name,
+				schemaDefinition: format.jsonSchema.schema,
+				...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+				...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
+			},
+		};
+	}
+	return { type: format.type };
 }
 
 function mapChatStopReason(reason: string | null): StopReason {

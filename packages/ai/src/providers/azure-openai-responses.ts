@@ -6,6 +6,7 @@ import type {
 	AssistantMessage,
 	Context,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -279,6 +280,10 @@ function buildParams(
 		params.top_p = options.topP;
 	}
 
+	if (options?.responseFormat !== undefined) {
+		params.text = { format: mapResponseFormat(options.responseFormat) };
+	}
+
 	if (context.tools && context.tools.length > 0) {
 		params.tools = convertResponsesTools(context.tools);
 	}
@@ -305,6 +310,19 @@ function buildParams(
 	}
 
 	return params;
+}
+
+function mapResponseFormat(format: ResponseFormat): NonNullable<ResponseCreateParamsStreaming["text"]>["format"] {
+	if (format.type === "json_schema") {
+		return {
+			type: "json_schema",
+			name: format.jsonSchema.name,
+			schema: format.jsonSchema.schema,
+			...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+			...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
+		};
+	}
+	return { type: format.type };
 }
 
 function mapSimpleToolChoiceToResponsesToolChoice(

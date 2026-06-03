@@ -15,6 +15,8 @@ import {
 	type ConverseStreamMetadataEvent,
 	ImageFormat,
 	type Message,
+	type OutputConfig,
+	OutputFormatType,
 	type SystemContentBlock,
 	type ToolChoice,
 	type ToolConfiguration,
@@ -31,6 +33,7 @@ import type {
 	Context,
 	ImageContent,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -200,6 +203,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 			if (options.frequencyPenalty !== undefined) {
 				throw new Error("Amazon Bedrock streamSimple does not support frequencyPenalty");
 			}
+			const outputConfig = buildOutputConfig(options.responseFormat);
 			let commandInput = {
 				modelId: model.id,
 				messages: convertMessages(context, model, cacheRetention),
@@ -212,6 +216,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				},
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
 				additionalModelRequestFields: buildAdditionalModelRequestFields(model, options),
+				...(outputConfig !== undefined && { outputConfig }),
 				...(options.requestMetadata !== undefined && { requestMetadata: options.requestMetadata }),
 			};
 			const nextCommandInput = await options?.onPayload?.(commandInput, model);
@@ -885,6 +890,25 @@ function convertToolConfig(
 	}
 
 	return { tools: bedrockTools, toolChoice: bedrockToolChoice };
+}
+
+function buildOutputConfig(format: ResponseFormat | undefined): OutputConfig | undefined {
+	if (format === undefined || format.type === "text") return undefined;
+	if (format.type === "json_object") {
+		throw new Error("Amazon Bedrock streamSimple does not support responseFormat json_object");
+	}
+	return {
+		textFormat: {
+			type: OutputFormatType.JSON_SCHEMA,
+			structure: {
+				jsonSchema: {
+					name: format.jsonSchema.name,
+					schema: JSON.stringify(format.jsonSchema.schema),
+					...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+				},
+			},
+		},
+	};
 }
 
 function mapStopReason(reason: string | undefined): StopReason {
