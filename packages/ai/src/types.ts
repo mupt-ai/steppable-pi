@@ -199,9 +199,16 @@ export interface ImagesOptions {
 
 export type ProviderImagesOptions = ImagesOptions & Record<string, unknown>;
 
+export type SimpleToolChoice = "auto" | "none" | "any" | "required" | { type: "function"; function: { name: string } };
+
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
+	/**
+	 * Controls whether and how the model uses tools from `Context.tools`.
+	 * Providers map this to their native tool-choice modes where supported.
+	 */
+	toolChoice?: SimpleToolChoice;
 	/** Custom token budgets for thinking levels (token-based providers only) */
 	thinkingBudgets?: ThinkingBudgets;
 }

@@ -33,7 +33,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice } from "./simple-options.ts";
 
 export interface GoogleVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -298,9 +298,14 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
 	const base = buildBaseOptions(model, options, undefined);
+	const toolChoice = mapSimpleToolChoiceToGoogleChoice(options?.toolChoice);
+	if (options?.toolChoice && !toolChoice) {
+		throw new Error("Google Vertex streamSimple does not support forcing a specific tool with toolChoice");
+	}
 	if (!options?.reasoning) {
 		return streamGoogleVertex(model, context, {
 			...base,
+			toolChoice,
 			thinking: { enabled: false },
 		} satisfies GoogleVertexOptions);
 	}
@@ -312,6 +317,7 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 	if (isGemini3ProModel(geminiModel) || isGemini3FlashModel(geminiModel)) {
 		return streamGoogleVertex(model, context, {
 			...base,
+			toolChoice,
 			thinking: {
 				enabled: true,
 				level: getGemini3ThinkingLevel(effort, geminiModel),
@@ -321,6 +327,7 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 
 	return streamGoogleVertex(model, context, {
 		...base,
+		toolChoice,
 		thinking: {
 			enabled: true,
 			budgetTokens: getGoogleBudget(geminiModel, effort, options.thinkingBudgets),

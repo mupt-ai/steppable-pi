@@ -33,7 +33,7 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 
 import { resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
-import { adjustMaxTokensForThinking, buildBaseOptions } from "./simple-options.ts";
+import { adjustMaxTokensForThinking, buildBaseOptions, mapSimpleToolChoiceToAnyToolChoice } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 /**
@@ -744,8 +744,13 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 	}
 
 	const base = buildBaseOptions(model, options, apiKey);
+	const toolChoice = mapSimpleToolChoiceToAnyToolChoice(options?.toolChoice);
 	if (!options?.reasoning) {
-		return streamAnthropic(model, context, { ...base, thinkingEnabled: false } satisfies AnthropicOptions);
+		return streamAnthropic(model, context, {
+			...base,
+			toolChoice,
+			thinkingEnabled: false,
+		} satisfies AnthropicOptions);
 	}
 
 	// For models with adaptive thinking: use an effort level.
@@ -754,6 +759,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		const effort = mapThinkingLevelToEffort(model, options.reasoning);
 		return streamAnthropic(model, context, {
 			...base,
+			toolChoice,
 			thinkingEnabled: true,
 			effort,
 		} satisfies AnthropicOptions);
@@ -770,6 +776,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 
 	return streamAnthropic(model, context, {
 		...base,
+		toolChoice,
 		maxTokens: adjusted.maxTokens,
 		thinkingEnabled: true,
 		thinkingBudgetTokens: adjusted.thinkingBudget,

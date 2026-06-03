@@ -60,6 +60,7 @@ function formatAzureOpenAIError(error: unknown): string {
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
+	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 	azureApiVersion?: string;
 	azureResourceName?: string;
 	azureBaseUrl?: string;
@@ -164,6 +165,7 @@ export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-resp
 	return streamAzureOpenAIResponses(model, context, {
 		...base,
 		reasoningEffort,
+		toolChoice: mapSimpleToolChoiceToResponsesToolChoice(options?.toolChoice),
 	} satisfies AzureOpenAIResponsesOptions);
 };
 
@@ -270,6 +272,10 @@ function buildParams(
 		params.tools = convertResponsesTools(context.tools);
 	}
 
+	if (options?.toolChoice) {
+		params.tool_choice = options.toolChoice;
+	}
+
 	if (model.reasoning) {
 		if (options?.reasoningEffort || options?.reasoningSummary) {
 			const effort = options?.reasoningEffort
@@ -288,4 +294,18 @@ function buildParams(
 	}
 
 	return params;
+}
+
+function mapSimpleToolChoiceToResponsesToolChoice(
+	choice: SimpleStreamOptions["toolChoice"],
+): ResponseCreateParamsStreaming["tool_choice"] | undefined {
+	if (choice === "any") return "required";
+	if (choice === "auto" || choice === "none" || choice === "required") return choice;
+	if (choice?.type === "function") {
+		return {
+			type: "function",
+			name: choice.function.name,
+		};
+	}
+	return undefined;
 }

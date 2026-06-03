@@ -30,7 +30,7 @@ import {
 	mapToolChoice,
 	retainThoughtSignature,
 } from "./google-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice } from "./simple-options.ts";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -288,8 +288,16 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 	}
 
 	const base = buildBaseOptions(model, options, apiKey);
+	const toolChoice = mapSimpleToolChoiceToGoogleChoice(options?.toolChoice);
+	if (options?.toolChoice && !toolChoice) {
+		throw new Error("Google streamSimple does not support forcing a specific tool with toolChoice");
+	}
 	if (!options?.reasoning) {
-		return streamGoogle(model, context, { ...base, thinking: { enabled: false } } satisfies GoogleOptions);
+		return streamGoogle(model, context, {
+			...base,
+			toolChoice,
+			thinking: { enabled: false },
+		} satisfies GoogleOptions);
 	}
 
 	const clampedReasoning = clampThinkingLevel(model, options.reasoning);
@@ -299,6 +307,7 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 	if (isGemini3ProModel(googleModel) || isGemini3FlashModel(googleModel) || isGemma4Model(googleModel)) {
 		return streamGoogle(model, context, {
 			...base,
+			toolChoice,
 			thinking: {
 				enabled: true,
 				level: getThinkingLevel(effort, googleModel),
@@ -308,6 +317,7 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 
 	return streamGoogle(model, context, {
 		...base,
+		toolChoice,
 		thinking: {
 			enabled: true,
 			budgetTokens: getGoogleBudget(googleModel, effort, options.thinkingBudgets),

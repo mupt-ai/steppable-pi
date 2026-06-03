@@ -1,4 +1,12 @@
-import type { Api, Model, SimpleStreamOptions, StreamOptions, ThinkingBudgets, ThinkingLevel } from "../types.ts";
+import type {
+	Api,
+	Model,
+	SimpleStreamOptions,
+	SimpleToolChoice,
+	StreamOptions,
+	ThinkingBudgets,
+	ThinkingLevel,
+} from "../types.ts";
 
 export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptions, apiKey?: string): StreamOptions {
 	return {
@@ -22,6 +30,32 @@ export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptio
 
 export function clampReasoning(effort: ThinkingLevel | undefined): Exclude<ThinkingLevel, "xhigh"> | undefined {
 	return effort === "xhigh" ? "high" : effort;
+}
+
+export function mapSimpleToolChoiceToFunctionChoice(
+	choice: SimpleToolChoice | undefined,
+): "auto" | "none" | "required" | { type: "function"; function: { name: string } } | undefined {
+	if (choice === "any") return "required";
+	if (choice === "auto" || choice === "none" || choice === "required") return choice;
+	if (choice?.type === "function") return choice;
+	return undefined;
+}
+
+export function mapSimpleToolChoiceToAnyToolChoice(
+	choice: SimpleToolChoice | undefined,
+): "auto" | "any" | "none" | { type: "tool"; name: string } | undefined {
+	if (choice === "required") return "any";
+	if (choice === "auto" || choice === "any" || choice === "none") return choice;
+	if (choice?.type === "function") return { type: "tool", name: choice.function.name };
+	return undefined;
+}
+
+export function mapSimpleToolChoiceToGoogleChoice(
+	choice: SimpleToolChoice | undefined,
+): "auto" | "none" | "any" | undefined {
+	if (choice === "required") return "any";
+	if (choice === "auto" || choice === "none" || choice === "any") return choice;
+	return undefined;
 }
 
 export function adjustMaxTokensForThinking(

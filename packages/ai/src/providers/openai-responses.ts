@@ -72,6 +72,7 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
+	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 }
 
 /**
@@ -175,6 +176,7 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 	return streamOpenAIResponses(model, context, {
 		...base,
 		reasoningEffort,
+		toolChoice: mapSimpleToolChoiceToResponsesToolChoice(options?.toolChoice),
 	} satisfies OpenAIResponsesOptions);
 };
 
@@ -255,6 +257,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		params.tools = convertResponsesTools(context.tools);
 	}
 
+	if (options?.toolChoice) {
+		params.tool_choice = options.toolChoice;
+	}
+
 	if (model.reasoning) {
 		if (options?.reasoningEffort || options?.reasoningSummary) {
 			const effort = options?.reasoningEffort
@@ -273,6 +279,20 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	}
 
 	return params;
+}
+
+function mapSimpleToolChoiceToResponsesToolChoice(
+	choice: SimpleStreamOptions["toolChoice"],
+): ResponseCreateParamsStreaming["tool_choice"] | undefined {
+	if (choice === "any") return "required";
+	if (choice === "auto" || choice === "none" || choice === "required") return choice;
+	if (choice?.type === "function") {
+		return {
+			type: "function",
+			name: choice.function.name,
+		};
+	}
+	return undefined;
 }
 
 function getServiceTierCostMultiplier(
