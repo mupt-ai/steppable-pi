@@ -445,6 +445,9 @@ function buildParams(
 	if (options.maxTokens !== undefined) {
 		generationConfig.maxOutputTokens = options.maxTokens;
 	}
+	if (options.topP !== undefined) {
+		generationConfig.topP = options.topP;
+	}
 	if (options.stop !== undefined) {
 		generationConfig.stopSequences = normalizeStopSequences(options.stop);
 	}

@@ -7,6 +7,7 @@
 - Added Ant Ling as a built-in OpenAI-compatible provider with Ling 2.6 and Ring 2.6 models.
 - Added MiniMax-M3 model to the `minimax` and `minimax-cn` direct providers, and removed the hardcoded context-window override that was masking models.dev values ([#5313](https://github.com/earendil-works/pi/issues/5313)).
 - Added NVIDIA NIM as a built-in OpenAI-compatible provider, exposing public NIM models that support tool use.
+- Added first-class `streamSimple()` top-p sampling support across provider adapters that support native top-p fields.
 - Added first-class `streamSimple()` stop sequence support across provider adapters that support native stop fields.
 - Added first-class `streamSimple()` tool choice support across provider adapters.
 

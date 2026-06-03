@@ -13,6 +13,7 @@ export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptio
 	return {
 		temperature: options?.temperature,
 		maxTokens: options?.maxTokens,
+		topP: options?.topP,
 		stop: options?.stop,
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,

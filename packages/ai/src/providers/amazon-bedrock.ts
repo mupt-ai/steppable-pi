@@ -204,6 +204,7 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 				inferenceConfig: {
 					...(inferenceMaxTokens !== undefined && { maxTokens: inferenceMaxTokens }),
 					...(options.temperature !== undefined && { temperature: options.temperature }),
+					...(options.topP !== undefined && { topP: options.topP }),
 					...(options.stop !== undefined && { stopSequences: normalizeStopSequences(options.stop) }),
 				},
 				toolConfig: convertToolConfig(context.tools, options.toolChoice),
