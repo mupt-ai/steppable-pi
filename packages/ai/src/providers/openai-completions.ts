@@ -538,6 +538,10 @@ function buildParams(
 		params.top_p = options.topP;
 	}
 
+	if (options?.frequencyPenalty !== undefined) {
+		params.frequency_penalty = options.frequencyPenalty;
+	}
+
 	if (options?.stop !== undefined) {
 		params.stop = options.stop;
 	}

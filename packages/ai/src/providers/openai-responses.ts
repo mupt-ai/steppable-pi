@@ -231,6 +231,9 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	if (options?.stop !== undefined) {
 		throw new Error("OpenAI Responses streamSimple does not support stop sequences");
 	}
+	if (options?.frequencyPenalty !== undefined) {
+		throw new Error("OpenAI Responses streamSimple does not support frequencyPenalty");
+	}
 
 	const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS);
 
