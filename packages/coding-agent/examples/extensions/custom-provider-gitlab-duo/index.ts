@@ -20,8 +20,8 @@ import {
 	type SimpleStreamOptions,
 	streamSimpleAnthropic,
 	streamSimpleOpenAIResponses,
-} from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+} from "@mupt-ai/pi-ai";
+import type { ExtensionAPI } from "@mupt-ai/pi-coding-agent";
 
 // =============================================================================
 // Constants

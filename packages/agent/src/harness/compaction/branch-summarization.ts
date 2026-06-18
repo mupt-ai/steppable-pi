@@ -1,5 +1,5 @@
-import type { Model } from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai";
+import type { Model } from "@mupt-ai/pi-ai";
+import { completeSimple } from "@mupt-ai/pi-ai";
 import type { AgentMessage } from "../../types.js";
 import {
 	convertToLlm,

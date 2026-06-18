@@ -1,5 +1,5 @@
-import { getOAuthProviders } from "@earendil-works/pi-ai/oauth";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import { getOAuthProviders, type OAuthDeviceCodeInfo } from "@mupt-ai/pi-ai/oauth";
 import { exec } from "child_process";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -102,6 +102,22 @@ export class LoginDialogComponent extends Container implements Focusable {
 		// Try to open browser
 		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
 		exec(`${openCmd} "${url}"`);
+
+		this.tui.requestRender();
+	}
+
+	showDeviceCode(info: OAuthDeviceCodeInfo): void {
+		this.contentContainer.clear();
+		this.contentContainer.addChild(new Spacer(1));
+		this.contentContainer.addChild(new Text(theme.fg("accent", info.verificationUri), 1, 0));
+		this.contentContainer.addChild(new Text(theme.fg("text", `Code: ${theme.bold(info.userCode)}`), 1, 0));
+
+		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+		const hyperlink = `\x1b]8;;${info.verificationUri}\x07${clickHint}\x1b]8;;\x07`;
+		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
+
+		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+		exec(`${openCmd} "${info.verificationUri}"`);
 
 		this.tui.requestRender();
 	}
