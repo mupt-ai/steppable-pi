@@ -88,11 +88,14 @@ export type ResponseFormat =
 			type: "json_schema";
 			jsonSchema: {
 				name: string;
-				schema: Record<string, unknown>;
-				strict?: boolean;
 				description?: string;
+				schema: unknown;
+				strict?: boolean;
 			};
 	  };
+
+/** Provider-scoped environment overrides. Values take precedence over process.env. */
+export type ProviderEnv = Record<string, string>;
 
 export interface ProviderResponse {
 	status: number;
@@ -102,24 +105,13 @@ export interface ProviderResponse {
 export interface StreamOptions {
 	temperature?: number;
 	maxTokens?: number;
-	/**
-	 * Nucleus sampling probability mass.
-	 * Providers that do not support top-p sampling should reject this option explicitly.
-	 */
+	/** Nucleus sampling probability mass. */
 	topP?: number;
-	/**
-	 * Penalizes tokens based on prior frequency in the generated text.
-	 * Providers that do not support frequency penalties should reject this option explicitly.
-	 */
+	/** Penalizes tokens based on prior frequency in the generated text. */
 	frequencyPenalty?: number;
-	/**
-	 * Requested text output format. Structured formats are provider-conditional.
-	 */
+	/** Requested text output format. Structured formats are provider-conditional. */
 	responseFormat?: ResponseFormat;
-	/**
-	 * Provider stop sequence(s). Generation stops when the model emits one of these strings.
-	 * Providers that do not support stop sequences should reject this option explicitly.
-	 */
+	/** Provider stop sequence(s). Generation stops when the model emits one of these strings. */
 	stop?: StopSequences;
 	signal?: AbortSignal;
 	apiKey?: string;
@@ -187,6 +179,12 @@ export interface StreamOptions {
 	 * For example, Anthropic uses `user_id` for abuse tracking and rate limiting.
 	 */
 	metadata?: Record<string, unknown>;
+	/**
+	 * Provider-scoped environment values. These take precedence over process.env for
+	 * provider configuration such as regional settings, endpoint placeholders, and
+	 * proxy variables.
+	 */
+	env?: ProviderEnv;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
@@ -238,10 +236,7 @@ export type SimpleToolChoice = "auto" | "none" | "any" | "required" | { type: "f
 // Unified options with reasoning passed to streamSimple() and completeSimple()
 export interface SimpleStreamOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
-	/**
-	 * Controls whether and how the model uses tools from `Context.tools`.
-	 * Providers map this to their native tool-choice modes where supported.
-	 */
+	/** Controls whether and how the model uses tools from `Context.tools`. */
 	toolChoice?: SimpleToolChoice;
 	/** Custom token budgets for thinking levels (token-based providers only) */
 	thinkingBudgets?: ThinkingBudgets;
@@ -308,6 +303,8 @@ export interface Usage {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	/** Subset of `cacheWrite` written with 1h retention. Only Anthropic reports this split. */
+	cacheWrite1h?: number;
 	totalTokens: number;
 	cost: {
 		input: number;
@@ -433,7 +430,7 @@ export interface OpenAICompletionsCompat {
 	requiresThinkingAsText?: boolean;
 	/** Whether all replayed assistant messages must include an empty reasoning_content field when reasoning is enabled. Default: auto-detected from URL. */
 	requiresReasoningContentOnAssistantMessages?: boolean;
-	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "openrouter" uses reasoning: { effort }, "deepseek" uses thinking: { type } plus reasoning_effort when supported, "together" uses reasoning: { enabled } plus reasoning_effort when supported, "zai" uses top-level enable_thinking: boolean, "qwen" uses top-level enable_thinking: boolean, "qwen-chat-template" uses chat_template_kwargs.enable_thinking, "string-thinking" uses top-level thinking: string, and "ant-ling" uses reasoning: { effort } only when the mapped effort is non-null. Default: "openai". */
+	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "openrouter" uses reasoning: { effort }, "deepseek" uses thinking: { type } plus reasoning_effort when supported, "together" uses reasoning: { enabled } plus reasoning_effort when supported, "zai" uses thinking: { type }, "qwen" uses top-level enable_thinking: boolean, "qwen-chat-template" uses chat_template_kwargs.enable_thinking, "string-thinking" uses top-level thinking: string, and "ant-ling" uses reasoning: { effort } only when the mapped effort is non-null. Default: "openai". */
 	thinkingFormat?:
 		| "openai"
 		| "openrouter"
@@ -444,7 +441,7 @@ export interface OpenAICompletionsCompat {
 		| "qwen-chat-template"
 		| "string-thinking"
 		| "ant-ling";
-	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
+	/** OpenRouter-compatible routing preferences sent as the `provider` request field. */
 	openRouterRouting?: OpenRouterRouting;
 	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
 	vercelGatewayRouting?: VercelGatewayRouting;
@@ -462,6 +459,8 @@ export interface OpenAICompletionsCompat {
 
 /** Compatibility settings for OpenAI Responses APIs. */
 export interface OpenAIResponsesCompat {
+	/** Whether the provider supports the `developer` role (vs `system`). Default: true. */
+	supportsDeveloperRole?: boolean;
 	/** Whether to send the OpenAI `session_id` cache-affinity header from `options.sessionId` when caching is enabled. Default: true. */
 	sendSessionIdHeader?: boolean;
 	/** Whether the provider supports `prompt_cache_retention: "24h"`. Default: true. */

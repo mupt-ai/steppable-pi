@@ -11,6 +11,7 @@ const VERSION_FILES = [
 	"packages/agent/package.json",
 	"packages/coding-agent/package.json",
 	"package-lock.json",
+	"packages/coding-agent/npm-shrinkwrap.json",
 ];
 
 if (!TARGET || (!BUMP_TYPES.has(TARGET) && !VERSION_RE.test(TARGET))) {
@@ -30,7 +31,7 @@ function run(command, options = {}) {
 			stdio: options.silent ? "pipe" : "inherit",
 			...options,
 		});
-	} catch (error) {
+	} catch {
 		if (!options.ignoreError) {
 			console.error(`Command failed: ${command}`);
 			process.exit(1);
@@ -64,6 +65,8 @@ if (initialStatus) {
 
 run(`node scripts/version-npm-packages.mjs ${shellQuote(TARGET)}`);
 run("npm install --package-lock-only --ignore-scripts");
+run("npm run shrinkwrap:coding-agent");
+run("npm run check");
 
 const version = getPackageVersion();
 const tag = `v${version}`;
@@ -82,6 +85,15 @@ const localTagExists = run(`git rev-parse -q --verify refs/tags/${shellQuote(tag
 });
 if (localTagExists) {
 	console.error(`Error: local tag ${tag} already exists.`);
+	process.exit(1);
+}
+
+const remoteTagExists = run(`git ls-remote --exit-code --tags origin ${shellQuote(tag)}`, {
+	silent: true,
+	ignoreError: true,
+});
+if (remoteTagExists) {
+	console.error(`Error: remote tag ${tag} already exists.`);
 	process.exit(1);
 }
 

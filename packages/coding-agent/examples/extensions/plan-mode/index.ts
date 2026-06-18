@@ -16,7 +16,7 @@ import { Key } from "@earendil-works/pi-tui";
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
 import type { AssistantMessage, TextContent } from "@mupt-ai/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@mupt-ai/pi-coding-agent";
-import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
+import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
 
 // Tools
 const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire"];

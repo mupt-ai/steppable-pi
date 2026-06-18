@@ -79,10 +79,13 @@ packages.agent.version = nextVersion;
 packages.codingAgent.version = nextVersion;
 
 packages.agent.dependencies["@mupt-ai/pi-ai"] = `^${nextVersion}`;
+delete packages.agent.dependencies["@earendil-ai/pi-ai"];
 delete packages.agent.dependencies["@earendil-works/pi-ai"];
 
 packages.codingAgent.dependencies["@mupt-ai/pi-agent-core"] = `^${nextVersion}`;
 packages.codingAgent.dependencies["@mupt-ai/pi-ai"] = `^${nextVersion}`;
+delete packages.codingAgent.dependencies["@earendil-ai/pi-agent-core"];
+delete packages.codingAgent.dependencies["@earendil-ai/pi-ai"];
 delete packages.codingAgent.dependencies["@earendil-works/pi-agent-core"];
 delete packages.codingAgent.dependencies["@earendil-works/pi-ai"];
 

@@ -13,6 +13,7 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
+import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
 import { buildBaseOptions } from "./simple-options.ts";
@@ -37,7 +38,9 @@ function resolveDeploymentName(model: Model<"azure-openai-responses">, options?:
 	if (options?.azureDeploymentName) {
 		return options.azureDeploymentName;
 	}
-	const mappedDeployment = parseDeploymentNameMap(process.env.AZURE_OPENAI_DEPLOYMENT_NAME_MAP).get(model.id);
+	const mappedDeployment = parseDeploymentNameMap(
+		getProviderEnvValue("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", options?.env),
+	).get(model.id);
 	return mappedDeployment || model.id;
 }
 
@@ -61,11 +64,11 @@ function formatAzureOpenAIError(error: unknown): string {
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
-	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 	azureApiVersion?: string;
 	azureResourceName?: string;
 	azureBaseUrl?: string;
 	azureDeploymentName?: string;
+	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 }
 
 /**
@@ -201,10 +204,14 @@ function resolveAzureConfig(
 	model: Model<"azure-openai-responses">,
 	options?: AzureOpenAIResponsesOptions,
 ): { baseUrl: string; apiVersion: string } {
-	const apiVersion = options?.azureApiVersion || process.env.AZURE_OPENAI_API_VERSION || DEFAULT_AZURE_API_VERSION;
+	const apiVersion =
+		options?.azureApiVersion ||
+		getProviderEnvValue("AZURE_OPENAI_API_VERSION", options?.env) ||
+		DEFAULT_AZURE_API_VERSION;
 
-	const baseUrl = options?.azureBaseUrl?.trim() || process.env.AZURE_OPENAI_BASE_URL?.trim() || undefined;
-	const resourceName = options?.azureResourceName || process.env.AZURE_OPENAI_RESOURCE_NAME;
+	const baseUrl =
+		options?.azureBaseUrl?.trim() || getProviderEnvValue("AZURE_OPENAI_BASE_URL", options?.env)?.trim() || undefined;
+	const resourceName = options?.azureResourceName || getProviderEnvValue("AZURE_OPENAI_RESOURCE_NAME", options?.env);
 
 	let resolvedBaseUrl = baseUrl;
 
@@ -252,13 +259,6 @@ function buildParams(
 	options: AzureOpenAIResponsesOptions | undefined,
 	deploymentName: string,
 ) {
-	if (options?.stop !== undefined) {
-		throw new Error("Azure OpenAI Responses streamSimple does not support stop sequences");
-	}
-	if (options?.frequencyPenalty !== undefined) {
-		throw new Error("Azure OpenAI Responses streamSimple does not support frequencyPenalty");
-	}
-
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS);
 
 	const params: ResponseCreateParamsStreaming = {
@@ -266,6 +266,7 @@ function buildParams(
 		input: messages,
 		stream: true,
 		prompt_cache_key: clampOpenAIPromptCacheKey(options?.sessionId),
+		store: false,
 	};
 
 	if (options?.maxTokens) {
@@ -276,6 +277,13 @@ function buildParams(
 		params.temperature = options?.temperature;
 	}
 
+	if (options?.stop !== undefined) {
+		throw new Error("Azure OpenAI Responses streamSimple does not support stop sequences");
+	}
+	if (options?.frequencyPenalty !== undefined) {
+		throw new Error("Azure OpenAI Responses streamSimple does not support frequencyPenalty");
+	}
+
 	if (options?.topP !== undefined) {
 		params.top_p = options.topP;
 	}
@@ -284,12 +292,12 @@ function buildParams(
 		params.text = { format: mapResponseFormat(options.responseFormat) };
 	}
 
-	if (context.tools && context.tools.length > 0) {
-		params.tools = convertResponsesTools(context.tools);
-	}
-
 	if (options?.toolChoice) {
 		params.tool_choice = options.toolChoice;
+	}
+
+	if (context.tools && context.tools.length > 0) {
+		params.tools = convertResponsesTools(context.tools);
 	}
 
 	if (model.reasoning) {
@@ -312,17 +320,18 @@ function buildParams(
 	return params;
 }
 
-function mapResponseFormat(format: ResponseFormat): NonNullable<ResponseCreateParamsStreaming["text"]>["format"] {
-	if (format.type === "json_schema") {
-		return {
-			type: "json_schema",
-			name: format.jsonSchema.name,
-			schema: format.jsonSchema.schema,
-			...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
-			...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
-		};
-	}
-	return { type: format.type };
+function mapResponseFormat(
+	format: ResponseFormat,
+): NonNullable<NonNullable<ResponseCreateParamsStreaming["text"]>["format"]> {
+	if (format.type === "text") return { type: "text" };
+	if (format.type === "json_object") return { type: "json_object" };
+	return {
+		type: "json_schema",
+		name: format.jsonSchema.name,
+		description: format.jsonSchema.description,
+		schema: format.jsonSchema.schema as Record<string, unknown>,
+		strict: format.jsonSchema.strict,
+	};
 }
 
 function mapSimpleToolChoiceToResponsesToolChoice(
@@ -330,11 +339,6 @@ function mapSimpleToolChoiceToResponsesToolChoice(
 ): ResponseCreateParamsStreaming["tool_choice"] | undefined {
 	if (choice === "any") return "required";
 	if (choice === "auto" || choice === "none" || choice === "required") return choice;
-	if (choice?.type === "function") {
-		return {
-			type: "function",
-			name: choice.function.name,
-		};
-	}
+	if (choice?.type === "function") return { type: "function", name: choice.function.name };
 	return undefined;
 }

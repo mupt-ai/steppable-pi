@@ -8,6 +8,7 @@ import type {
 	Context,
 	Model,
 	OpenAIResponsesCompat,
+	ProviderEnv,
 	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
@@ -16,6 +17,7 @@ import type {
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
+import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -28,11 +30,11 @@ const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"
  * Resolve cache retention preference.
  * Defaults to "short" and uses PI_CACHE_RETENTION for backward compatibility.
  */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
+function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
-	if (typeof process !== "undefined" && process.env.PI_CACHE_RETENTION === "long") {
+	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
 		return "long";
 	}
 	return "short";
@@ -40,6 +42,7 @@ function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention 
 
 function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCompat> {
 	return {
+		supportsDeveloperRole: model.compat?.supportsDeveloperRole ?? true,
 		sendSessionIdHeader: model.compat?.sendSessionIdHeader ?? true,
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
 	};
@@ -112,9 +115,9 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 			if (!apiKey) {
 				throw new Error(`No API key for provider: ${model.provider}`);
 			}
-			const cacheRetention = resolveCacheRetention(options?.cacheRetention);
+			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
-			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId);
+			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId, options?.env);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -187,6 +190,7 @@ function createClient(
 	apiKey: string,
 	optionsHeaders?: Record<string, string>,
 	sessionId?: string,
+	env?: ProviderEnv,
 ) {
 	const compat = getCompat(model);
 	const headers = { ...model.headers };
@@ -222,23 +226,16 @@ function createClient(
 
 	return new OpenAI({
 		apiKey,
-		baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl,
+		baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model, env) : model.baseUrl,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders,
 	});
 }
 
 function buildParams(model: Model<"openai-responses">, context: Context, options?: OpenAIResponsesOptions) {
-	if (options?.stop !== undefined) {
-		throw new Error("OpenAI Responses streamSimple does not support stop sequences");
-	}
-	if (options?.frequencyPenalty !== undefined) {
-		throw new Error("OpenAI Responses streamSimple does not support frequencyPenalty");
-	}
-
 	const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS);
 
-	const cacheRetention = resolveCacheRetention(options?.cacheRetention);
+	const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 	const compat = getCompat(model);
 	const params: ResponseCreateParamsStreaming = {
 		model: model.id,
@@ -257,24 +254,31 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 		params.temperature = options?.temperature;
 	}
 
-	if (options?.topP !== undefined) {
-		params.top_p = options.topP;
+	if (options?.stop !== undefined) {
+		throw new Error("OpenAI Responses streamSimple does not support stop sequences");
+	}
+	if (options?.frequencyPenalty !== undefined) {
+		throw new Error("OpenAI Responses streamSimple does not support frequencyPenalty");
 	}
 
-	if (options?.serviceTier !== undefined) {
-		params.service_tier = options.serviceTier;
+	if (options?.topP !== undefined) {
+		params.top_p = options.topP;
 	}
 
 	if (options?.responseFormat !== undefined) {
 		params.text = { format: mapResponseFormat(options.responseFormat) };
 	}
 
-	if (context.tools && context.tools.length > 0) {
-		params.tools = convertResponsesTools(context.tools);
-	}
-
 	if (options?.toolChoice) {
 		params.tool_choice = options.toolChoice;
+	}
+
+	if (options?.serviceTier !== undefined) {
+		params.service_tier = options.serviceTier;
+	}
+
+	if (context.tools && context.tools.length > 0) {
+		params.tools = convertResponsesTools(context.tools);
 	}
 
 	if (model.reasoning) {
@@ -297,17 +301,18 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 	return params;
 }
 
-function mapResponseFormat(format: ResponseFormat): NonNullable<ResponseCreateParamsStreaming["text"]>["format"] {
-	if (format.type === "json_schema") {
-		return {
-			type: "json_schema",
-			name: format.jsonSchema.name,
-			schema: format.jsonSchema.schema,
-			...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
-			...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
-		};
-	}
-	return { type: format.type };
+function mapResponseFormat(
+	format: ResponseFormat,
+): NonNullable<NonNullable<ResponseCreateParamsStreaming["text"]>["format"]> {
+	if (format.type === "text") return { type: "text" };
+	if (format.type === "json_object") return { type: "json_object" };
+	return {
+		type: "json_schema",
+		name: format.jsonSchema.name,
+		description: format.jsonSchema.description,
+		schema: format.jsonSchema.schema as Record<string, unknown>,
+		strict: format.jsonSchema.strict,
+	};
 }
 
 function mapSimpleToolChoiceToResponsesToolChoice(
@@ -315,12 +320,7 @@ function mapSimpleToolChoiceToResponsesToolChoice(
 ): ResponseCreateParamsStreaming["tool_choice"] | undefined {
 	if (choice === "any") return "required";
 	if (choice === "auto" || choice === "none" || choice === "required") return choice;
-	if (choice?.type === "function") {
-		return {
-			type: "function",
-			name: choice.function.name,
-		};
-	}
+	if (choice?.type === "function") return { type: "function", name: choice.function.name };
 	return undefined;
 }
 

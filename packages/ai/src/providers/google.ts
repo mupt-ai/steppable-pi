@@ -35,6 +35,7 @@ import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice, normalizeStopSeque
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
+	unsupportedToolChoiceError?: string;
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number; // -1 for dynamic, 0 to disable
@@ -290,13 +291,15 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 
 	const base = buildBaseOptions(model, options, apiKey);
 	const toolChoice = mapSimpleToolChoiceToGoogleChoice(options?.toolChoice);
-	if (options?.toolChoice && !toolChoice) {
-		throw new Error("Google streamSimple does not support forcing a specific tool with toolChoice");
-	}
+	const unsupportedToolChoiceError =
+		options?.toolChoice && !toolChoice
+			? "Google streamSimple does not support forcing a specific tool with toolChoice"
+			: undefined;
 	if (!options?.reasoning) {
 		return streamGoogle(model, context, {
 			...base,
 			toolChoice,
+			unsupportedToolChoiceError,
 			thinking: { enabled: false },
 		} satisfies GoogleOptions);
 	}
@@ -309,6 +312,7 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 		return streamGoogle(model, context, {
 			...base,
 			toolChoice,
+			unsupportedToolChoiceError,
 			thinking: {
 				enabled: true,
 				level: getThinkingLevel(effort, googleModel),
@@ -319,6 +323,7 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 	return streamGoogle(model, context, {
 		...base,
 		toolChoice,
+		unsupportedToolChoiceError,
 		thinking: {
 			enabled: true,
 			budgetTokens: getGoogleBudget(googleModel, effort, options.thinkingBudgets),
@@ -351,6 +356,10 @@ function buildParams(
 	context: Context,
 	options: GoogleOptions = {},
 ): GenerateContentParameters {
+	if (options.unsupportedToolChoiceError) {
+		throw new Error(options.unsupportedToolChoiceError);
+	}
+
 	const contents = convertMessages(model, context);
 
 	const generationConfig: GenerateContentConfig = {};
@@ -375,6 +384,7 @@ function buildParams(
 		...(context.systemPrompt && { systemInstruction: sanitizeSurrogates(context.systemPrompt) }),
 		...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
 	};
+
 	applyResponseFormat(config, options.responseFormat);
 
 	if (context.tools && context.tools.length > 0 && options.toolChoice) {
@@ -420,7 +430,7 @@ function applyResponseFormat(config: GenerateContentConfig, format: ResponseForm
 	if (format === undefined || format.type === "text") return;
 	config.responseMimeType = "application/json";
 	if (format.type === "json_schema") {
-		config.responseJsonSchema = format.jsonSchema.schema;
+		config.responseJsonSchema = format.jsonSchema.schema as Record<string, unknown>;
 	}
 }
 
@@ -435,7 +445,8 @@ function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
 }
 
 function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
-	return /gemini-3(?:\.\d+)?-flash/.test(model.id.toLowerCase());
+	const id = model.id.toLowerCase();
+	return /gemini-3(?:\.\d+)?-flash/.test(id) || id === "gemini-flash-latest" || id === "gemini-flash-lite-latest";
 }
 
 function getDisabledThinkingConfig(model: Model<"google-generative-ai">): ThinkingConfig {
