@@ -13,8 +13,8 @@ import {
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
-} from "../messages.js";
-import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.js";
+} from "../messages.ts";
+import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
 import {
 	computeFileLists,
 	createFileOps,
@@ -23,7 +23,7 @@ import {
 	formatFileOperations,
 	SUMMARIZATION_SYSTEM_PROMPT,
 	serializeConversation,
-} from "./utils.js";
+} from "./utils.ts";
 
 // ============================================================================
 // File Operation Tracking
@@ -225,6 +225,24 @@ export function shouldCompact(contextTokens: number, contextWindow: number, sett
 // Cut point detection
 // ============================================================================
 
+const ESTIMATED_IMAGE_CHARS = 4800;
+
+function estimateTextAndImageContentChars(content: string | Array<{ type: string; text?: string }>): number {
+	if (typeof content === "string") {
+		return content.length;
+	}
+
+	let chars = 0;
+	for (const block of content) {
+		if (block.type === "text" && block.text) {
+			chars += block.text.length;
+		} else if (block.type === "image") {
+			chars += ESTIMATED_IMAGE_CHARS;
+		}
+	}
+	return chars;
+}
+
 /**
  * Estimate token count for a message using chars/4 heuristic.
  * This is conservative (overestimates tokens).
@@ -234,16 +252,9 @@ export function estimateTokens(message: AgentMessage): number {
 
 	switch (message.role) {
 		case "user": {
-			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
-			if (typeof content === "string") {
-				chars = content.length;
-			} else if (Array.isArray(content)) {
-				for (const block of content) {
-					if (block.type === "text" && block.text) {
-						chars += block.text.length;
-					}
-				}
-			}
+			chars = estimateTextAndImageContentChars(
+				(message as { content: string | Array<{ type: string; text?: string }> }).content,
+			);
 			return Math.ceil(chars / 4);
 		}
 		case "assistant": {
@@ -261,18 +272,7 @@ export function estimateTokens(message: AgentMessage): number {
 		}
 		case "custom":
 		case "toolResult": {
-			if (typeof message.content === "string") {
-				chars = message.content.length;
-			} else {
-				for (const block of message.content) {
-					if (block.type === "text" && block.text) {
-						chars += block.text.length;
-					}
-					if (block.type === "image") {
-						chars += 4800; // Estimate images as 4000 chars, or 1200 tokens
-					}
-				}
-			}
+			chars = estimateTextAndImageContentChars(message.content);
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {
@@ -528,10 +528,11 @@ function createSummarizationOptions(
 	maxTokens: number,
 	apiKey: string | undefined,
 	headers: Record<string, string> | undefined,
+	env: Record<string, string> | undefined,
 	signal: AbortSignal | undefined,
 	thinkingLevel: ThinkingLevel | undefined,
 ): SimpleStreamOptions {
-	const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers };
+	const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers, env };
 	if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
 		options.reasoning = thinkingLevel;
 	}
@@ -566,6 +567,7 @@ export async function generateSummary(
 	previousSummary?: string,
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
+	env?: Record<string, string>,
 ): Promise<string> {
 	const maxTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
@@ -598,7 +600,7 @@ export async function generateSummary(
 		},
 	];
 
-	const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel);
+	const completionOptions = createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel);
 
 	const response = await completeSummarization(
 		model,
@@ -753,6 +755,7 @@ export async function compact(
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
+	env?: Record<string, string>,
 ): Promise<CompactionResult> {
 	const {
 		firstKeptEntryId,
@@ -783,6 +786,7 @@ export async function compact(
 						previousSummary,
 						thinkingLevel,
 						streamFn,
+						env,
 					)
 				: Promise.resolve("No prior history."),
 			generateTurnPrefixSummary(
@@ -791,6 +795,7 @@ export async function compact(
 				settings.reserveTokens,
 				apiKey,
 				headers,
+				env,
 				signal,
 				thinkingLevel,
 				streamFn,
@@ -811,6 +816,7 @@ export async function compact(
 			previousSummary,
 			thinkingLevel,
 			streamFn,
+			env,
 		);
 	}
 
@@ -839,6 +845,7 @@ async function generateTurnPrefixSummary(
 	reserveTokens: number,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
+	env?: Record<string, string>,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
@@ -861,7 +868,7 @@ async function generateTurnPrefixSummary(
 	const response = await completeSummarization(
 		model,
 		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
-		createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel),
+		createSummarizationOptions(model, maxTokens, apiKey, headers, env, signal, thinkingLevel),
 		streamFn,
 	);
 

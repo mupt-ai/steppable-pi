@@ -14,6 +14,7 @@ import type {
 	Context,
 	Model,
 	ThinkingLevel as PiThinkingLevel,
+	ProviderEnv,
 	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
@@ -24,6 +25,7 @@ import type {
 	ToolCall,
 } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import type { GoogleThinkingLevel } from "./google-shared.ts";
 import {
@@ -38,6 +40,7 @@ import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice, normalizeStopSeque
 
 export interface GoogleVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
+	unsupportedToolChoiceError?: string;
 	thinking?: {
 		enabled: boolean;
 		budgetTokens?: number; // -1 for dynamic, 0 to disable
@@ -92,7 +95,7 @@ export const streamGoogleVertex: StreamFunction<"google-vertex", GoogleVertexOpt
 			// Create the client using either a Vertex API key, if provided, or ADC with project and location
 			const client = apiKey
 				? createClientWithApiKey(model, apiKey, options?.headers)
-				: createClient(model, resolveProject(options), resolveLocation(options), options?.headers);
+				: createClient(model, resolveProject(options), resolveLocation(options), options?.headers, options?.env);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -300,13 +303,15 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 ): AssistantMessageEventStream => {
 	const base = buildBaseOptions(model, options, undefined);
 	const toolChoice = mapSimpleToolChoiceToGoogleChoice(options?.toolChoice);
-	if (options?.toolChoice && !toolChoice) {
-		throw new Error("Google Vertex streamSimple does not support forcing a specific tool with toolChoice");
-	}
+	const unsupportedToolChoiceError =
+		options?.toolChoice && !toolChoice
+			? "Google Vertex streamSimple does not support forcing a specific tool with toolChoice"
+			: undefined;
 	if (!options?.reasoning) {
 		return streamGoogleVertex(model, context, {
 			...base,
 			toolChoice,
+			unsupportedToolChoiceError,
 			thinking: { enabled: false },
 		} satisfies GoogleVertexOptions);
 	}
@@ -319,6 +324,7 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 		return streamGoogleVertex(model, context, {
 			...base,
 			toolChoice,
+			unsupportedToolChoiceError,
 			thinking: {
 				enabled: true,
 				level: getGemini3ThinkingLevel(effort, geminiModel),
@@ -329,6 +335,7 @@ export const streamSimpleGoogleVertex: StreamFunction<"google-vertex", SimpleStr
 	return streamGoogleVertex(model, context, {
 		...base,
 		toolChoice,
+		unsupportedToolChoiceError,
 		thinking: {
 			enabled: true,
 			budgetTokens: getGoogleBudget(geminiModel, effort, options.thinkingBudgets),
@@ -341,12 +348,15 @@ function createClient(
 	project: string,
 	location: string,
 	optionsHeaders?: Record<string, string>,
+	env?: ProviderEnv,
 ): GoogleGenAI {
+	const googleAuthOptions = buildGoogleAuthOptions(env);
 	return new GoogleGenAI({
 		vertexai: true,
 		project,
 		location,
 		apiVersion: API_VERSION,
+		...(googleAuthOptions ? { googleAuthOptions } : {}),
 		httpOptions: buildHttpOptions(model, optionsHeaders),
 	});
 }
@@ -402,6 +412,11 @@ function baseUrlIncludesApiVersion(baseUrl: string): boolean {
 	}
 }
 
+function buildGoogleAuthOptions(env?: ProviderEnv): { keyFilename: string } | undefined {
+	const keyFilename = getProviderEnvValue("GOOGLE_APPLICATION_CREDENTIALS", env);
+	return keyFilename ? { keyFilename } : undefined;
+}
+
 function resolveApiKey(options?: GoogleVertexOptions): string | undefined {
 	const apiKey = options?.apiKey?.trim();
 	if (!apiKey || apiKey === GCP_VERTEX_CREDENTIALS_MARKER || isPlaceholderApiKey(apiKey)) {
@@ -415,7 +430,10 @@ function isPlaceholderApiKey(apiKey: string): boolean {
 }
 
 function resolveProject(options?: GoogleVertexOptions): string {
-	const project = options?.project || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT;
+	const project =
+		options?.project ||
+		getProviderEnvValue("GOOGLE_CLOUD_PROJECT", options?.env) ||
+		getProviderEnvValue("GCLOUD_PROJECT", options?.env);
 	if (!project) {
 		throw new Error(
 			"Vertex AI requires a project ID. Set GOOGLE_CLOUD_PROJECT/GCLOUD_PROJECT or pass project in options.",
@@ -425,7 +443,7 @@ function resolveProject(options?: GoogleVertexOptions): string {
 }
 
 function resolveLocation(options?: GoogleVertexOptions): string {
-	const location = options?.location || process.env.GOOGLE_CLOUD_LOCATION;
+	const location = options?.location || getProviderEnvValue("GOOGLE_CLOUD_LOCATION", options?.env);
 	if (!location) {
 		throw new Error("Vertex AI requires a location. Set GOOGLE_CLOUD_LOCATION or pass location in options.");
 	}
@@ -437,6 +455,10 @@ function buildParams(
 	context: Context,
 	options: GoogleVertexOptions = {},
 ): GenerateContentParameters {
+	if (options.unsupportedToolChoiceError) {
+		throw new Error(options.unsupportedToolChoiceError);
+	}
+
 	const contents = convertMessages(model, context);
 
 	const generationConfig: GenerateContentConfig = {};
@@ -461,6 +483,7 @@ function buildParams(
 		...(context.systemPrompt && { systemInstruction: sanitizeSurrogates(context.systemPrompt) }),
 		...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
 	};
+
 	applyResponseFormat(config, options.responseFormat);
 
 	if (context.tools && context.tools.length > 0 && options.toolChoice) {
@@ -505,7 +528,7 @@ function applyResponseFormat(config: GenerateContentConfig, format: ResponseForm
 	if (format === undefined || format.type === "text") return;
 	config.responseMimeType = "application/json";
 	if (format.type === "json_schema") {
-		config.responseJsonSchema = format.jsonSchema.schema;
+		config.responseJsonSchema = format.jsonSchema.schema as Record<string, unknown>;
 	}
 }
 
@@ -516,7 +539,8 @@ function isGemini3ProModel(model: Model<"google-generative-ai">): boolean {
 }
 
 function isGemini3FlashModel(model: Model<"google-generative-ai">): boolean {
-	return /gemini-3(?:\.\d+)?-flash/.test(model.id.toLowerCase());
+	const id = model.id.toLowerCase();
+	return /gemini-3(?:\.\d+)?-flash/.test(id) || id === "gemini-flash-latest" || id === "gemini-flash-lite-latest";
 }
 
 function getDisabledThinkingConfig(model: Model<"google-vertex">): ThinkingConfig {

@@ -628,7 +628,7 @@ function mapResponseFormat(format: ResponseFormat): MistralResponseFormat {
 			type: "json_schema",
 			jsonSchema: {
 				name: format.jsonSchema.name,
-				schemaDefinition: format.jsonSchema.schema,
+				schemaDefinition: format.jsonSchema.schema as Record<string, unknown>,
 				...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
 				...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
 			},

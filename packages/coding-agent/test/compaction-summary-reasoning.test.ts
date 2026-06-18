@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
 import type { AssistantMessage, Model } from "@mupt-ai/pi-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type CompactionPreparation, compact, generateSummary } from "../src/core/compaction/index.js";
+import { type CompactionPreparation, compact, generateSummary } from "../src/core/compaction/index.ts";
 
 const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),

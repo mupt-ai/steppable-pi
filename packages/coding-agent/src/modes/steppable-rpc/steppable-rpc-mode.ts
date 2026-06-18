@@ -6,13 +6,13 @@
  * transactionally with the snapshot and next action.
  */
 
-import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
-import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
-import { killTrackedDetachedChildren } from "../../utils/shell.js";
-import { attachJsonlLineReader, serializeJsonLine } from "../rpc/jsonl.js";
-import type { SteppableRpcCommand, SteppableRpcResponse } from "./steppable-rpc-types.js";
+import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { takeOverStdout, writeRawStdout } from "../../core/output-guard.ts";
+import { killTrackedDetachedChildren } from "../../utils/shell.ts";
+import { attachJsonlLineReader, serializeJsonLine } from "../rpc/jsonl.ts";
+import type { SteppableRpcCommand, SteppableRpcResponse } from "./steppable-rpc-types.ts";
 
-export type { SteppableRpcCommand, SteppableRpcResponse } from "./steppable-rpc-types.js";
+export type { SteppableRpcCommand, SteppableRpcResponse } from "./steppable-rpc-types.ts";
 
 export async function runSteppableRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
 	takeOverStdout();
