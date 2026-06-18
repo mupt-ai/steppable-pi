@@ -1,7 +1,16 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@mupt-ai/pi-agent-core": ["../agent/src/index.ts"],
+      "@mupt-ai/pi-agent-core/*": ["../agent/src/*"],
+      "@mupt-ai/pi-ai": ["../ai/src/index.ts"],
+      "@mupt-ai/pi-ai/*": ["../ai/src/*"],
+      "@earendil-works/pi-tui": ["../tui/src/index.ts"],
+      "@earendil-works/pi-tui/*": ["../tui/src/*"]
+    }
   },
   "include": ["src/**/*"]
 }

@@ -4,13 +4,13 @@ import {
 	GoogleGenAI,
 	type ThinkingConfig,
 } from "@google/genai";
-import { getEnvApiKey } from "../env-api-keys.js";
-import { calculateCost, clampThinkingLevel } from "../models.js";
+import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -19,10 +19,10 @@ import type {
 	ThinkingContent,
 	ThinkingLevel,
 	ToolCall,
-} from "../types.js";
-import { AssistantMessageEventStream } from "../utils/event-stream.js";
-import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import type { GoogleThinkingLevel } from "./google-shared.js";
+} from "../types.ts";
+import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import type { GoogleThinkingLevel } from "./google-shared.ts";
 import {
 	convertMessages,
 	convertTools,
@@ -30,8 +30,8 @@ import {
 	mapStopReason,
 	mapToolChoice,
 	retainThoughtSignature,
-} from "./google-shared.js";
-import { buildBaseOptions } from "./simple-options.js";
+} from "./google-shared.ts";
+import { buildBaseOptions, mapSimpleToolChoiceToGoogleChoice, normalizeStopSequences } from "./simple-options.ts";
 
 export interface GoogleOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -72,7 +72,10 @@ export const streamGoogle: StreamFunction<"google-generative-ai", GoogleOptions>
 		};
 
 		try {
-			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
+			const apiKey = options?.apiKey;
+			if (!apiKey) {
+				throw new Error(`No API key for provider: ${model.provider}`);
+			}
 			const client = createClient(model, apiKey, options?.headers);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
@@ -280,14 +283,22 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey;
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
 
 	const base = buildBaseOptions(model, options, apiKey);
+	const toolChoice = mapSimpleToolChoiceToGoogleChoice(options?.toolChoice);
+	if (options?.toolChoice && !toolChoice) {
+		throw new Error("Google streamSimple does not support forcing a specific tool with toolChoice");
+	}
 	if (!options?.reasoning) {
-		return streamGoogle(model, context, { ...base, thinking: { enabled: false } } satisfies GoogleOptions);
+		return streamGoogle(model, context, {
+			...base,
+			toolChoice,
+			thinking: { enabled: false },
+		} satisfies GoogleOptions);
 	}
 
 	const clampedReasoning = clampThinkingLevel(model, options.reasoning);
@@ -297,6 +308,7 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 	if (isGemini3ProModel(googleModel) || isGemini3FlashModel(googleModel) || isGemma4Model(googleModel)) {
 		return streamGoogle(model, context, {
 			...base,
+			toolChoice,
 			thinking: {
 				enabled: true,
 				level: getThinkingLevel(effort, googleModel),
@@ -306,6 +318,7 @@ export const streamSimpleGoogle: StreamFunction<"google-generative-ai", SimpleSt
 
 	return streamGoogle(model, context, {
 		...base,
+		toolChoice,
 		thinking: {
 			enabled: true,
 			budgetTokens: getGoogleBudget(googleModel, effort, options.thinkingBudgets),
@@ -347,12 +360,22 @@ function buildParams(
 	if (options.maxTokens !== undefined) {
 		generationConfig.maxOutputTokens = options.maxTokens;
 	}
+	if (options.topP !== undefined) {
+		generationConfig.topP = options.topP;
+	}
+	if (options.frequencyPenalty !== undefined) {
+		generationConfig.frequencyPenalty = options.frequencyPenalty;
+	}
+	if (options.stop !== undefined) {
+		generationConfig.stopSequences = normalizeStopSequences(options.stop);
+	}
 
 	const config: GenerateContentConfig = {
 		...(Object.keys(generationConfig).length > 0 && generationConfig),
 		...(context.systemPrompt && { systemInstruction: sanitizeSurrogates(context.systemPrompt) }),
 		...(context.tools && context.tools.length > 0 && { tools: convertTools(context.tools) }),
 	};
+	applyResponseFormat(config, options.responseFormat);
 
 	if (context.tools && context.tools.length > 0 && options.toolChoice) {
 		config.toolConfig = {
@@ -391,6 +414,14 @@ function buildParams(
 	};
 
 	return params;
+}
+
+function applyResponseFormat(config: GenerateContentConfig, format: ResponseFormat | undefined): void {
+	if (format === undefined || format.type === "text") return;
+	config.responseMimeType = "application/json";
+	if (format.type === "json_schema") {
+		config.responseJsonSchema = format.jsonSchema.schema;
+	}
 }
 
 type ClampedThinkingLevel = Exclude<ThinkingLevel, "xhigh">;

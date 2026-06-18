@@ -1,20 +1,21 @@
 import { AzureOpenAI } from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-import { getEnvApiKey } from "../env-api-keys.js";
-import { clampThinkingLevel } from "../models.js";
+import { clampThinkingLevel } from "../models.ts";
 import type {
 	Api,
 	AssistantMessage,
 	Context,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
-} from "../types.js";
-import { AssistantMessageEventStream } from "../utils/event-stream.js";
-import { headersToRecord } from "../utils/headers.js";
-import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
-import { buildBaseOptions } from "./simple-options.js";
+} from "../types.ts";
+import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { headersToRecord } from "../utils/headers.ts";
+import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
+import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import { buildBaseOptions } from "./simple-options.ts";
 
 const DEFAULT_AZURE_API_VERSION = "v1";
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure-openai-responses"]);
@@ -40,10 +41,27 @@ function resolveDeploymentName(model: Model<"azure-openai-responses">, options?:
 	return mappedDeployment || model.id;
 }
 
+function formatAzureOpenAIError(error: unknown): string {
+	if (error instanceof Error) {
+		const status = (error as Error & { status?: unknown }).status;
+		const statusCode = typeof status === "number" ? status : undefined;
+		if (statusCode !== undefined) {
+			return `Azure OpenAI API error (${statusCode}): ${error.message}`;
+		}
+		return error.message;
+	}
+	try {
+		return JSON.stringify(error);
+	} catch {
+		return String(error);
+	}
+}
+
 // Azure OpenAI Responses-specific options
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
+	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 	azureApiVersion?: string;
 	azureResourceName?: string;
 	azureBaseUrl?: string;
@@ -84,7 +102,10 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 
 		try {
 			// Create Azure OpenAI client
-			const apiKey = options?.apiKey || getEnvApiKey(model.provider) || "";
+			const apiKey = options?.apiKey;
+			if (!apiKey) {
+				throw new Error(`No API key for provider: ${model.provider}`);
+			}
 			const client = createClient(model, apiKey, options);
 			let params = buildParams(model, context, options, deploymentName);
 			const nextParams = await options?.onPayload?.(params, model);
@@ -94,7 +115,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 			const requestOptions = {
 				...(options?.signal ? { signal: options.signal } : {}),
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
-				...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+				maxRetries: options?.maxRetries ?? 0,
 			};
 			const { data: openaiStream, response } = await client.responses.create(params, requestOptions).withResponse();
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
@@ -119,7 +140,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
 				delete (block as { partialJson?: string }).partialJson;
 			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			output.errorMessage = formatAzureOpenAIError(error);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -133,7 +154,7 @@ export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-resp
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey;
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -145,6 +166,7 @@ export const streamSimpleAzureOpenAIResponses: StreamFunction<"azure-openai-resp
 	return streamAzureOpenAIResponses(model, context, {
 		...base,
 		reasoningEffort,
+		toolChoice: mapSimpleToolChoiceToResponsesToolChoice(options?.toolChoice),
 	} satisfies AzureOpenAIResponsesOptions);
 };
 
@@ -207,15 +229,6 @@ function resolveAzureConfig(
 }
 
 function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
-	if (!apiKey) {
-		if (!process.env.AZURE_OPENAI_API_KEY) {
-			throw new Error(
-				"Azure OpenAI API key is required. Set AZURE_OPENAI_API_KEY environment variable or pass it as an argument.",
-			);
-		}
-		apiKey = process.env.AZURE_OPENAI_API_KEY;
-	}
-
 	const headers = { ...model.headers };
 
 	if (options?.headers) {
@@ -239,13 +252,20 @@ function buildParams(
 	options: AzureOpenAIResponsesOptions | undefined,
 	deploymentName: string,
 ) {
+	if (options?.stop !== undefined) {
+		throw new Error("Azure OpenAI Responses streamSimple does not support stop sequences");
+	}
+	if (options?.frequencyPenalty !== undefined) {
+		throw new Error("Azure OpenAI Responses streamSimple does not support frequencyPenalty");
+	}
+
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS);
 
 	const params: ResponseCreateParamsStreaming = {
 		model: deploymentName,
 		input: messages,
 		stream: true,
-		prompt_cache_key: options?.sessionId,
+		prompt_cache_key: clampOpenAIPromptCacheKey(options?.sessionId),
 	};
 
 	if (options?.maxTokens) {
@@ -256,8 +276,20 @@ function buildParams(
 		params.temperature = options?.temperature;
 	}
 
+	if (options?.topP !== undefined) {
+		params.top_p = options.topP;
+	}
+
+	if (options?.responseFormat !== undefined) {
+		params.text = { format: mapResponseFormat(options.responseFormat) };
+	}
+
 	if (context.tools && context.tools.length > 0) {
 		params.tools = convertResponsesTools(context.tools);
+	}
+
+	if (options?.toolChoice) {
+		params.tool_choice = options.toolChoice;
 	}
 
 	if (model.reasoning) {
@@ -278,4 +310,31 @@ function buildParams(
 	}
 
 	return params;
+}
+
+function mapResponseFormat(format: ResponseFormat): NonNullable<ResponseCreateParamsStreaming["text"]>["format"] {
+	if (format.type === "json_schema") {
+		return {
+			type: "json_schema",
+			name: format.jsonSchema.name,
+			schema: format.jsonSchema.schema,
+			...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+			...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
+		};
+	}
+	return { type: format.type };
+}
+
+function mapSimpleToolChoiceToResponsesToolChoice(
+	choice: SimpleStreamOptions["toolChoice"],
+): ResponseCreateParamsStreaming["tool_choice"] | undefined {
+	if (choice === "any") return "required";
+	if (choice === "auto" || choice === "none" || choice === "required") return choice;
+	if (choice?.type === "function") {
+		return {
+			type: "function",
+			name: choice.function.name,
+		};
+	}
+	return undefined;
 }

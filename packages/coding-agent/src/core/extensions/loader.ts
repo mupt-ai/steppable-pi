@@ -8,11 +8,11 @@ import { createRequire } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as _bundledPiAgentCore from "@earendil-works/pi-agent-core";
-import * as _bundledPiAi from "@earendil-works/pi-ai";
-import * as _bundledPiAiOauth from "@earendil-works/pi-ai/oauth";
 import type { KeyId } from "@earendil-works/pi-tui";
 import * as _bundledPiTui from "@earendil-works/pi-tui";
+import * as _bundledPiAgentCore from "@mupt-ai/pi-agent-core";
+import * as _bundledPiAi from "@mupt-ai/pi-ai";
+import * as _bundledPiAiOauth from "@mupt-ai/pi-ai/oauth";
 import { createJiti } from "jiti/static";
 // Static imports of packages that extensions may use.
 // These MUST be static so Bun bundles them into the compiled binary.
@@ -22,7 +22,7 @@ import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
 import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.js";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @earendil-works/pi-coding-agent.
+// avoiding a circular dependency. Extensions can import from @mupt-ai/pi-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
@@ -48,11 +48,11 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@sinclair/typebox": _bundledTypebox,
 	"@sinclair/typebox/compile": _bundledTypeboxCompile,
 	"@sinclair/typebox/value": _bundledTypeboxValue,
-	"@earendil-works/pi-agent-core": _bundledPiAgentCore,
+	"@mupt-ai/pi-agent-core": _bundledPiAgentCore,
 	"@earendil-works/pi-tui": _bundledPiTui,
-	"@earendil-works/pi-ai": _bundledPiAi,
-	"@earendil-works/pi-ai/oauth": _bundledPiAiOauth,
-	"@earendil-works/pi-coding-agent": _bundledPiCodingAgent,
+	"@mupt-ai/pi-ai": _bundledPiAi,
+	"@mupt-ai/pi-ai/oauth": _bundledPiAiOauth,
+	"@mupt-ai/pi-coding-agent": _bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 	"@mariozechner/pi-tui": _bundledPiTui,
 	"@mariozechner/pi-ai": _bundledPiAi,
@@ -79,26 +79,38 @@ function getAliases(): Record<string, string> {
 	const typeboxValueEntry = require.resolve("typebox/value");
 
 	const packagesRoot = path.resolve(__dirname, "../../../../");
-	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
-		const workspacePath = path.join(packagesRoot, workspaceRelativePath);
-		if (fs.existsSync(workspacePath)) {
-			return workspacePath;
+	const resolveWorkspaceOrImport = (
+		workspaceDistRelativePath: string,
+		workspaceSrcRelativePath: string,
+		specifier: string,
+	): string => {
+		const workspaceDistPath = path.join(packagesRoot, workspaceDistRelativePath);
+		if (fs.existsSync(workspaceDistPath)) {
+			return workspaceDistPath;
+		}
+		const workspaceSrcPath = path.join(packagesRoot, workspaceSrcRelativePath);
+		if (fs.existsSync(workspaceSrcPath)) {
+			return workspaceSrcPath;
 		}
 		return fileURLToPath(import.meta.resolve(specifier));
 	};
 
 	const piCodingAgentEntry = packageIndex;
-	const piAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@earendil-works/pi-agent-core");
-	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@earendil-works/pi-tui");
-	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@earendil-works/pi-ai");
-	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@earendil-works/pi-ai/oauth");
+	const piAgentCoreEntry = resolveWorkspaceOrImport(
+		"agent/dist/index.js",
+		"agent/src/index.ts",
+		"@mupt-ai/pi-agent-core",
+	);
+	const piTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "tui/src/index.ts", "@earendil-works/pi-tui");
+	const piAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "ai/src/index.ts", "@mupt-ai/pi-ai");
+	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "ai/src/oauth.ts", "@mupt-ai/pi-ai/oauth");
 
 	_aliases = {
-		"@earendil-works/pi-coding-agent": piCodingAgentEntry,
-		"@earendil-works/pi-agent-core": piAgentCoreEntry,
+		"@mupt-ai/pi-coding-agent": piCodingAgentEntry,
+		"@mupt-ai/pi-agent-core": piAgentCoreEntry,
 		"@earendil-works/pi-tui": piTuiEntry,
-		"@earendil-works/pi-ai": piAiEntry,
-		"@earendil-works/pi-ai/oauth": piAiOauthEntry,
+		"@mupt-ai/pi-ai": piAiEntry,
+		"@mupt-ai/pi-ai/oauth": piAiOauthEntry,
 		"@mariozechner/pi-coding-agent": piCodingAgentEntry,
 		"@mariozechner/pi-agent-core": piAgentCoreEntry,
 		"@mariozechner/pi-tui": piTuiEntry,

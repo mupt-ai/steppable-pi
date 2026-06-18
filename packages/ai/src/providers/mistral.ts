@@ -5,14 +5,15 @@ import type {
 	CompletionEvent,
 	ContentChunk,
 	FunctionTool,
+	ResponseFormat as MistralResponseFormat,
 } from "@mistralai/mistralai/models/components";
-import { getEnvApiKey } from "../env-api-keys.js";
-import { calculateCost, clampThinkingLevel } from "../models.js";
+import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
 	Context,
 	Message,
 	Model,
+	ResponseFormat,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -21,13 +22,13 @@ import type {
 	ThinkingContent,
 	Tool,
 	ToolCall,
-} from "../types.js";
-import { AssistantMessageEventStream } from "../utils/event-stream.js";
-import { shortHash } from "../utils/hash.js";
-import { parseStreamingJson } from "../utils/json-parse.js";
-import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { buildBaseOptions } from "./simple-options.js";
-import { transformMessages } from "./transform-messages.js";
+} from "../types.ts";
+import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { shortHash } from "../utils/hash.ts";
+import { parseStreamingJson } from "../utils/json-parse.ts";
+import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { buildBaseOptions, mapSimpleToolChoiceToFunctionChoice } from "./simple-options.ts";
+import { transformMessages } from "./transform-messages.ts";
 
 const MISTRAL_TOOL_CALL_ID_LENGTH = 9;
 const MAX_MISTRAL_ERROR_BODY_CHARS = 4000;
@@ -57,7 +58,7 @@ export const streamMistral: StreamFunction<"mistral-conversations", MistralOptio
 		const output = createOutput(model);
 
 		try {
-			const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+			const apiKey = options?.apiKey;
 			if (!apiKey) {
 				throw new Error(`No API key for provider: ${model.provider}`);
 			}
@@ -113,7 +114,7 @@ export const streamSimpleMistral: StreamFunction<"mistral-conversations", Simple
 	context: Context,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+	const apiKey = options?.apiKey;
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
@@ -125,6 +126,7 @@ export const streamSimpleMistral: StreamFunction<"mistral-conversations", Simple
 
 	return streamMistral(model, context, {
 		...base,
+		toolChoice: mapSimpleToolChoiceToFunctionChoice(options?.toolChoice),
 		promptMode: shouldUseReasoning && usesPromptModeReasoning(model) ? "reasoning" : undefined,
 		reasoningEffort:
 			shouldUseReasoning && usesReasoningEffort(model) ? mapReasoningEffort(model, reasoning) : undefined,
@@ -253,6 +255,10 @@ function buildChatPayload(
 	if (context.tools?.length) payload.tools = toFunctionTools(context.tools);
 	if (options?.temperature !== undefined) payload.temperature = options.temperature;
 	if (options?.maxTokens !== undefined) payload.maxTokens = options.maxTokens;
+	if (options?.topP !== undefined) payload.topP = options.topP;
+	if (options?.frequencyPenalty !== undefined) payload.frequencyPenalty = options.frequencyPenalty;
+	if (options?.responseFormat !== undefined) payload.responseFormat = mapResponseFormat(options.responseFormat);
+	if (options?.stop !== undefined) payload.stop = options.stop;
 	if (options?.toolChoice) payload.toolChoice = mapToolChoice(options.toolChoice);
 	if (options?.promptMode) payload.promptMode = options.promptMode;
 	if (options?.reasoningEffort) payload.reasoningEffort = options.reasoningEffort;
@@ -614,6 +620,21 @@ function mapToolChoice(
 		type: "function",
 		function: { name: choice.function.name },
 	};
+}
+
+function mapResponseFormat(format: ResponseFormat): MistralResponseFormat {
+	if (format.type === "json_schema") {
+		return {
+			type: "json_schema",
+			jsonSchema: {
+				name: format.jsonSchema.name,
+				schemaDefinition: format.jsonSchema.schema,
+				...(format.jsonSchema.description !== undefined && { description: format.jsonSchema.description }),
+				...(format.jsonSchema.strict !== undefined && { strict: format.jsonSchema.strict }),
+			},
+		};
+	}
+	return { type: format.type };
 }
 
 function mapChatStopReason(reason: string | null): StopReason {

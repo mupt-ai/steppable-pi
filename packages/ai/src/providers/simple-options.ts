@@ -1,19 +1,22 @@
-import type { Api, Model, SimpleStreamOptions, StreamOptions, ThinkingBudgets, ThinkingLevel } from "../types.js";
+import type {
+	Api,
+	Model,
+	SimpleStreamOptions,
+	SimpleToolChoice,
+	StopSequences,
+	StreamOptions,
+	ThinkingBudgets,
+	ThinkingLevel,
+} from "../types.ts";
 
-const DEFAULT_MAX_OUTPUT_TOKENS = 32000;
-const CONTEXT_WINDOW_OUTPUT_TOLERANCE = 1024;
-
-export function buildBaseOptions(model: Model<Api>, options?: SimpleStreamOptions, apiKey?: string): StreamOptions {
-	const defaultMaxTokens =
-		model.maxTokens > 0
-			? model.maxTokens >= model.contextWindow - CONTEXT_WINDOW_OUTPUT_TOLERANCE
-				? Math.min(model.maxTokens, DEFAULT_MAX_OUTPUT_TOKENS)
-				: model.maxTokens
-			: undefined;
-
+export function buildBaseOptions(_model: Model<Api>, options?: SimpleStreamOptions, apiKey?: string): StreamOptions {
 	return {
 		temperature: options?.temperature,
-		maxTokens: options?.maxTokens ?? defaultMaxTokens,
+		maxTokens: options?.maxTokens,
+		topP: options?.topP,
+		frequencyPenalty: options?.frequencyPenalty,
+		responseFormat: options?.responseFormat,
+		stop: options?.stop,
 		signal: options?.signal,
 		apiKey: apiKey || options?.apiKey,
 		transport: options?.transport,
@@ -23,6 +26,7 @@ export function buildBaseOptions(model: Model<Api>, options?: SimpleStreamOption
 		onPayload: options?.onPayload,
 		onResponse: options?.onResponse,
 		timeoutMs: options?.timeoutMs,
+		websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
 		maxRetries: options?.maxRetries,
 		maxRetryDelayMs: options?.maxRetryDelayMs,
 		metadata: options?.metadata,
@@ -33,8 +37,40 @@ export function clampReasoning(effort: ThinkingLevel | undefined): Exclude<Think
 	return effort === "xhigh" ? "high" : effort;
 }
 
+export function mapSimpleToolChoiceToFunctionChoice(
+	choice: SimpleToolChoice | undefined,
+): "auto" | "none" | "required" | { type: "function"; function: { name: string } } | undefined {
+	if (choice === "any") return "required";
+	if (choice === "auto" || choice === "none" || choice === "required") return choice;
+	if (choice?.type === "function") return choice;
+	return undefined;
+}
+
+export function mapSimpleToolChoiceToAnyToolChoice(
+	choice: SimpleToolChoice | undefined,
+): "auto" | "any" | "none" | { type: "tool"; name: string } | undefined {
+	if (choice === "required") return "any";
+	if (choice === "auto" || choice === "any" || choice === "none") return choice;
+	if (choice?.type === "function") return { type: "tool", name: choice.function.name };
+	return undefined;
+}
+
+export function mapSimpleToolChoiceToGoogleChoice(
+	choice: SimpleToolChoice | undefined,
+): "auto" | "none" | "any" | undefined {
+	if (choice === "required") return "any";
+	if (choice === "auto" || choice === "none" || choice === "any") return choice;
+	return undefined;
+}
+
+export function normalizeStopSequences(stop: StopSequences | undefined): string[] | undefined {
+	if (stop === undefined) return undefined;
+	return Array.isArray(stop) ? stop : [stop];
+}
+
 export function adjustMaxTokensForThinking(
-	baseMaxTokens: number,
+	// Undefined means no explicit caller cap. Use the model cap and fit thinking inside it.
+	baseMaxTokens: number | undefined,
 	modelMaxTokens: number,
 	reasoningLevel: ThinkingLevel,
 	customBudgets?: ThinkingBudgets,
@@ -50,7 +86,8 @@ export function adjustMaxTokensForThinking(
 	const minOutputTokens = 1024;
 	const level = clampReasoning(reasoningLevel)!;
 	let thinkingBudget = budgets[level]!;
-	const maxTokens = Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
+	const maxTokens =
+		baseMaxTokens === undefined ? modelMaxTokens : Math.min(baseMaxTokens + thinkingBudget, modelMaxTokens);
 
 	if (maxTokens <= thinkingBudget) {
 		thinkingBudget = Math.max(0, maxTokens - minOutputTokens);
