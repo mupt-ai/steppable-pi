@@ -6,6 +6,7 @@ const TARGET = process.argv[2];
 const BUMP_TYPES = new Set(["patch", "minor"]);
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const MUPT_VERSION_RE = /^(\d+)\.(\d+)\.(\d+)(?:-mupt\.(\d+))?$/;
+const MUPT_REPOSITORY_URL = "git+https://github.com/mupt-ai/steppable-pi.git";
 
 if (!TARGET || (!BUMP_TYPES.has(TARGET) && !VERSION_RE.test(TARGET))) {
 	console.error("Usage: node scripts/version-npm-packages.mjs <patch|minor|x.y.z[-prerelease]>");
@@ -75,6 +76,14 @@ const nextVersion = BUMP_TYPES.has(TARGET) ? bumpVersion(getCurrentVersion(packa
 packages.ai.name = "@mupt-ai/pi-ai";
 packages.agent.name = "@mupt-ai/pi-agent-core";
 packages.codingAgent.name = "@mupt-ai/pi-coding-agent";
+
+for (const pkg of Object.values(packages)) {
+	pkg.repository = {
+		...pkg.repository,
+		type: "git",
+		url: MUPT_REPOSITORY_URL,
+	};
+}
 
 packages.ai.version = nextVersion;
 packages.agent.version = nextVersion;
