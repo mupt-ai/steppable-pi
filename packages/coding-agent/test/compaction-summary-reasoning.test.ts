@@ -7,8 +7,8 @@ const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),
 }));
 
-vi.mock("@mupt-ai/pi-ai", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("@mupt-ai/pi-ai")>();
+vi.mock("@mupt-ai/pi-ai/compat", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@mupt-ai/pi-ai/compat")>();
 	return {
 		...actual,
 		completeSimple: completeSimpleMock,

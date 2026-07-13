@@ -1,4 +1,4 @@
-import { streamSimple } from "../src/stream.ts";
+import { streamSimple } from "../src/compat.ts";
 import type { Api, Context, Model, SimpleStreamOptions } from "../src/types.ts";
 
 class PayloadCaptured extends Error {

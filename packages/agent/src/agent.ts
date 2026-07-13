@@ -11,7 +11,7 @@ import {
 	type ToolResultMessage,
 	type Transport,
 	validateToolArguments,
-} from "@mupt-ai/pi-ai";
+} from "@mupt-ai/pi-ai/compat";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import type {
 	AfterToolCallContext,
@@ -33,6 +33,7 @@ import type {
 	AgentToolResult,
 	BeforeToolCallContext,
 	BeforeToolCallResult,
+	PrepareNextTurnContext,
 	QueueMode,
 	SerializedAgentError,
 	StreamFn,
@@ -119,6 +120,10 @@ export interface AgentOptions {
 	prepareNextTurn?: (
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+	prepareNextTurnWithContext?: (
+		context: PrepareNextTurnContext,
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
 	sessionId?: string;
@@ -199,6 +204,10 @@ export class Agent {
 	public prepareNextTurn?: (
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+	public prepareNextTurnWithContext?: (
+		context: PrepareNextTurnContext,
+		signal?: AbortSignal,
+	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	private activeRun?: ActiveRun;
 	private steppable: Omit<AgentSteppableSnapshot, "systemPrompt" | "model" | "thinkingLevel" | "messages"> = {
 		schemaVersion: 1,
@@ -231,6 +240,7 @@ export class Agent {
 		this.beforeToolCall = options.beforeToolCall;
 		this.afterToolCall = options.afterToolCall;
 		this.prepareNextTurn = options.prepareNextTurn;
+		this.prepareNextTurnWithContext = options.prepareNextTurnWithContext;
 		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
 		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
 		this.sessionId = options.sessionId;
@@ -858,7 +868,15 @@ export class Agent {
 			toolExecution: this.toolExecution,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
-			prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,
+			prepareNextTurn:
+				this.prepareNextTurnWithContext || this.prepareNextTurn
+					? async (context) => {
+							if (this.prepareNextTurnWithContext) {
+								return await this.prepareNextTurnWithContext(context, this.signal);
+							}
+							return await this.prepareNextTurn?.(this.signal);
+						}
+					: undefined,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
