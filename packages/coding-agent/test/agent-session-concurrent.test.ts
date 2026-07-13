@@ -13,7 +13,7 @@ import {
 	getModel,
 	type ImageContent,
 	type TextContent,
-} from "@mupt-ai/pi-ai";
+} from "@mupt-ai/pi-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";

@@ -1,4 +1,10 @@
 #!/usr/bin/env node
+/**
+ * Release Mupt packages directly from main.
+ *
+ * The tag triggers the dedicated Mupt package publish workflow. Binary release
+ * assets are handled separately by build-binaries.yml.
+ */
 
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -12,6 +18,8 @@ const VERSION_FILES = [
 	"packages/coding-agent/package.json",
 	"package-lock.json",
 	"packages/coding-agent/npm-shrinkwrap.json",
+	"packages/coding-agent/install-lock/package.json",
+	"packages/coding-agent/install-lock/package-lock.json",
 ];
 
 if (!TARGET || (!BUMP_TYPES.has(TARGET) && !VERSION_RE.test(TARGET))) {
@@ -66,6 +74,7 @@ if (initialStatus) {
 run(`node scripts/version-npm-packages.mjs ${shellQuote(TARGET)}`);
 run("npm install --package-lock-only --ignore-scripts");
 run("npm run shrinkwrap:coding-agent");
+run("npm run install-lock:coding-agent");
 run("npm run check");
 
 const version = getPackageVersion();

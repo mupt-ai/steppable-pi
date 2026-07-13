@@ -13,7 +13,7 @@
  */
 
 import type { AgentMessage } from "@mupt-ai/pi-agent-core";
-import { complete, type Message } from "@mupt-ai/pi-ai";
+import { complete, type Message } from "@mupt-ai/pi-ai/compat";
 import type { ExtensionAPI, SessionEntry } from "@mupt-ai/pi-coding-agent";
 import { BorderedLoader, convertToLlm, serializeConversation } from "@mupt-ai/pi-coding-agent";
 
@@ -136,7 +136,7 @@ export default function (pi: ExtensionAPI) {
 					const response = await complete(
 						ctx.model!,
 						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+						{ apiKey: auth.apiKey, headers: auth.headers, env: auth.env, signal: loader.signal },
 					);
 
 					if (response.stopReason === "aborted") {

@@ -1,5 +1,5 @@
 import { Container, Markdown, matchesKey, Text } from "@earendil-works/pi-tui";
-import { complete, getModel } from "@mupt-ai/pi-ai";
+import { complete, getModel } from "@mupt-ai/pi-ai/compat";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mupt-ai/pi-coding-agent";
 import { DynamicBorder, getMarkdownTheme } from "@mupt-ai/pi-coding-agent";
 
@@ -191,6 +191,7 @@ export default function (pi: ExtensionAPI) {
 				{
 					apiKey: auth.apiKey,
 					headers: auth.headers,
+					env: auth.env,
 					reasoningEffort: "high",
 				},
 			);

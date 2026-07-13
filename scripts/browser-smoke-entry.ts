@@ -1,4 +1,5 @@
-import { complete, createAssistantMessageEventStream, getModel, getProviders, Type } from "@mupt-ai/pi-ai";
+import { createAssistantMessageEventStream, Type } from "@mupt-ai/pi-ai";
+import { complete, getModel, getProviders } from "@mupt-ai/pi-ai/compat";
 import {
 	Agent,
 	bashExecutionToText,

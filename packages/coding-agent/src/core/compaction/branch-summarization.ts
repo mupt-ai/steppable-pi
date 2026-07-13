@@ -6,8 +6,8 @@
  */
 
 import type { AgentMessage, StreamFn } from "@mupt-ai/pi-agent-core";
-import type { Model, SimpleStreamOptions } from "@mupt-ai/pi-ai";
-import { completeSimple } from "@mupt-ai/pi-ai";
+import type { Model, SimpleStreamOptions } from "@mupt-ai/pi-ai/compat";
+import { completeSimple } from "@mupt-ai/pi-ai/compat";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
@@ -66,7 +66,7 @@ export interface GenerateBranchSummaryOptions {
 	/** Model to use for summarization */
 	model: Model<any>;
 	/** API key for the model */
-	apiKey: string;
+	apiKey?: string;
 	/** Request headers for the model */
 	headers?: Record<string, string>;
 	/** Provider-scoped environment values for the model */
