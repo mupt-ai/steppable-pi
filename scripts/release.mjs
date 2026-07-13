@@ -16,6 +16,7 @@ const VERSION_FILES = [
 	"packages/ai/package.json",
 	"packages/agent/package.json",
 	"packages/coding-agent/package.json",
+	"packages/orchestrator/package.json",
 	"package-lock.json",
 	"packages/coding-agent/npm-shrinkwrap.json",
 	"packages/coding-agent/install-lock/package.json",

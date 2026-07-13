@@ -16,6 +16,7 @@ const packagePaths = {
 	ai: "packages/ai/package.json",
 	agent: "packages/agent/package.json",
 	codingAgent: "packages/coding-agent/package.json",
+	orchestrator: "packages/orchestrator/package.json",
 };
 
 function readPackageJson(path) {
@@ -67,6 +68,7 @@ const packages = {
 	agent: readPackageJson(packagePaths.agent),
 	codingAgent: readPackageJson(packagePaths.codingAgent),
 };
+const orchestrator = readPackageJson(packagePaths.orchestrator);
 
 const nextVersion = BUMP_TYPES.has(TARGET) ? bumpVersion(getCurrentVersion(packages), TARGET) : TARGET;
 
@@ -89,11 +91,17 @@ delete packages.codingAgent.dependencies["@earendil-ai/pi-ai"];
 delete packages.codingAgent.dependencies["@earendil-works/pi-agent-core"];
 delete packages.codingAgent.dependencies["@earendil-works/pi-ai"];
 
+orchestrator.dependencies["@mupt-ai/pi-coding-agent"] = `^${nextVersion}`;
+delete orchestrator.dependencies["@earendil-ai/pi-coding-agent"];
+delete orchestrator.dependencies["@earendil-works/pi-coding-agent"];
+
 writePackageJson(packagePaths.ai, packages.ai);
 writePackageJson(packagePaths.agent, packages.agent);
 writePackageJson(packagePaths.codingAgent, packages.codingAgent);
+writePackageJson(packagePaths.orchestrator, orchestrator);
 
 console.log(`Updated Mupt npm packages to ${nextVersion}`);
 for (const pkg of Object.values(packages)) {
 	console.log(`  ${pkg.name}: ${pkg.version}`);
 }
+console.log(`  ${orchestrator.name} -> @mupt-ai/pi-coding-agent@^${nextVersion}`);
