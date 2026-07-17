@@ -1,10 +1,10 @@
 {
 	"name": "@mupt-ai/pi-coding-agent-install",
-	"version": "0.80.6-mupt.1",
+	"version": "0.80.6-mupt.2",
 	"private": true,
 	"description": "Lockfile root used by the Pi installer and updater.",
 	"dependencies": {
-		"@mupt-ai/pi-coding-agent": "0.80.6-mupt.1"
+		"@mupt-ai/pi-coding-agent": "0.80.6-mupt.2"
 	},
 	"overrides": {
 		"rimraf": "6.1.2",
