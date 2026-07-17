@@ -143,6 +143,7 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 
 			await processResponsesStream(openaiStream, output, stream, model, {
 				serviceTier: options?.serviceTier,
+				emitProviderEvents: options?.emitProviderEvents,
 				applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
 			});
 
@@ -187,6 +188,7 @@ export const streamSimple: StreamFunction<"openai-responses", SimpleStreamOption
 		...base,
 		reasoningEffort,
 		toolChoice: mapSimpleToolChoiceToResponsesToolChoice(options?.toolChoice),
+		emitProviderEvents: options?.emitProviderEvents,
 	} satisfies OpenAIResponsesOptions);
 };
 

@@ -162,6 +162,11 @@ export interface StreamOptions {
 	 */
 	onResponse?: (response: ProviderResponse, model: Model<Api>) => void | Promise<void>;
 	/**
+	 * Emit raw provider stream events alongside normalized assistant events.
+	 * Only providers that explicitly support this option emit these events.
+	 */
+	emitProviderEvents?: boolean;
+	/**
 	 * Optional custom HTTP headers to include in API requests.
 	 * Merged with provider defaults; caller values override default headers.
 	 * On AWS Bedrock these are injected via a Smithy `build`-step middleware so
@@ -351,6 +356,7 @@ export interface TextContent {
 	type: "text";
 	text: string;
 	textSignature?: string; // e.g., for OpenAI responses, message metadata (legacy id string or TextSignatureV1 JSON)
+	annotations?: Array<Record<string, unknown>>;
 }
 
 export interface ThinkingContent {
@@ -486,6 +492,7 @@ export interface Context {
  */
 export type AssistantMessageEvent =
 	| { type: "start"; partial: AssistantMessage }
+	| { type: "provider_event"; event: unknown }
 	| { type: "text_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
 	| { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
