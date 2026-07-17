@@ -12,6 +12,7 @@
 - Added native `xhigh` and `max` thinking levels for Claude Fable 5 across all generated provider catalogs ([#6490](https://github.com/earendil-works/pi-mono/pull/6490) by [@davidbrai](https://github.com/davidbrai)).
 - Added `toolChoice` support to OpenAI Codex Responses, including `"required"` to force a tool call.
 - Added `toolChoice` support to OpenAI Responses, including required and named tool selection.
+- Added opt-in raw provider event streaming for OpenAI Responses and Azure OpenAI Responses via `emitProviderEvents` ([#49](https://github.com/mupt-ai/steppable-pi/pull/49)).
 
 ### Fixed
 
@@ -19,6 +20,7 @@
 - Fixed the GitHub Copilot `mai-code-1-flash-picker` model to route through the `/responses` endpoint.
 - Fixed Amazon Bedrock requests to use the generic `apiKey` stream option as a Bedrock bearer token.
 - Fixed OpenRouter OpenAI-compatible session IDs to use the `x-session-id` header instead of OpenAI-specific session-affinity fields ([#6366](https://github.com/earendil-works/pi/issues/6366)).
+- Fixed OpenAI Responses replay to preserve opaque provider-native output items and text annotations across turns ([#49](https://github.com/mupt-ai/steppable-pi/pull/49)).
 
 ## [0.80.6] - 2026-07-09
 
