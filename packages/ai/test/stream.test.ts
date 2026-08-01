@@ -1017,7 +1017,7 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider (k2p7 via Anthropic Messages)", () => {
+	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider (via Anthropic Messages)", () => {
 		const llm = getModel("kimi-coding", "kimi-for-coding");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
