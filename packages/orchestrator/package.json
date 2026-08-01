@@ -37,7 +37,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@mupt-ai/pi-coding-agent": "^0.80.6-mupt.2"
+		"@mupt-ai/pi-coding-agent": "^0.80.6-mupt.3"
 	},
 	"devDependencies": {
 		"shx": "0.4.0"
