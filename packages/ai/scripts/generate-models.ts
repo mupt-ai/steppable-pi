@@ -1852,7 +1852,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					baseUrl = `${variant.basePath}/v1`;
 				}
 
-				if (variant.provider === "opencode" && modelId === "grok-build-0.1") {
+				if (api === "openai-completions" && variant.provider === "opencode" && modelId === "grok-build-0.1") {
 					compat = { ...(compat ?? {}), supportsReasoningEffort: false };
 				}
 
