@@ -75,6 +75,8 @@ export interface BedrockOptions extends StreamOptions {
 	toolChoice?: "auto" | "any" | "none" | { type: "tool"; name: string };
 	/* See https://docs.aws.amazon.com/bedrock/latest/userguide/inference-reasoning.html for supported models. */
 	reasoning?: ThinkingLevel;
+	/** Explicitly disable reasoning for models whose Bedrock schema supports it. */
+	thinkingEnabled?: boolean;
 	/* Custom token budgets per thinking level. Overrides default budgets. */
 	thinkingBudgets?: ThinkingBudgets;
 	/* Only supported by Claude 4.x models, see https://docs.aws.amazon.com/bedrock/latest/userguide/claude-messages-extended-thinking.html#claude-messages-extended-thinking-tool-use-interleaved */
@@ -201,8 +203,9 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 					httpAgent: new HttpProxyAgent(proxyUrl),
 					httpsAgent: new HttpsProxyAgent(proxyUrl) as unknown as HttpsAgent,
 				});
-			} else if (getProviderEnvValue("AWS_BEDROCK_FORCE_HTTP1", options.env) === "1") {
-				// Some custom endpoints require HTTP/1.1 instead of HTTP/2
+			} else if (process.versions.bun || getProviderEnvValue("AWS_BEDROCK_FORCE_HTTP1", options.env) === "1") {
+				// Bun cannot decode ConverseStream event frames through the AWS SDK's
+				// default HTTP/2 handler. Some custom endpoints also require HTTP/1.1.
 				config.requestHandler = new NodeHttpHandler();
 			}
 		} else {
@@ -409,7 +412,12 @@ export const streamSimple: StreamFunction<"bedrock-converse-stream", SimpleStrea
 	const base = buildBaseOptions(model, context, options, undefined);
 	const toolChoice = mapSimpleToolChoiceToAnyToolChoice(options?.toolChoice);
 	if (!options?.reasoning) {
-		return stream(model, context, { ...base, toolChoice, reasoning: undefined } satisfies BedrockOptions);
+		return stream(model, context, {
+			...base,
+			toolChoice,
+			reasoning: undefined,
+			thinkingEnabled: false,
+		} satisfies BedrockOptions);
 	}
 
 	if (isAnthropicClaudeModel(model)) {
@@ -1050,9 +1058,19 @@ function buildAdditionalModelRequestFields(
 	model: Model<"bedrock-converse-stream">,
 	options: BedrockOptions,
 ): Record<string, any> | undefined {
-	if (!options.reasoning || !model.reasoning) {
-		return undefined;
+	if (!model.reasoning) return undefined;
+
+	if (isOpenAIModel(model)) {
+		const effort =
+			options.thinkingEnabled === false
+				? (model.thinkingLevelMap?.off ?? "none")
+				: options.reasoning
+					? (model.thinkingLevelMap?.[options.reasoning] ?? options.reasoning)
+					: undefined;
+		return typeof effort === "string" ? { reasoning: { effort } } : undefined;
 	}
+
+	if (!options.reasoning) return undefined;
 
 	if (isAnthropicClaudeModel(model)) {
 		// GovCloud Bedrock currently rejects the Claude thinking.display field.
@@ -1094,6 +1112,10 @@ function buildAdditionalModelRequestFields(
 	}
 
 	return undefined;
+}
+
+function isOpenAIModel(model: Model<"bedrock-converse-stream">): boolean {
+	return /^(?:(?:global|us|eu|apac)\.)?openai[./]/.test(model.id.toLowerCase());
 }
 
 function createImageBlock(mimeType: string, data: string) {

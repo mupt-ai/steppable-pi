@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type BedrockOptions, stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
+import {
+	type BedrockOptions,
+	stream as streamBedrock,
+	streamSimple as streamBedrockSimple,
+} from "../src/api/bedrock-converse-stream.ts";
 import { getModel } from "../src/compat.ts";
 import type { Context, Model } from "../src/types.ts";
 import { hasBedrockCredentials } from "./bedrock-utils.ts";
@@ -9,6 +13,7 @@ interface BedrockThinkingPayload {
 		thinking?: { type: string; budget_tokens?: number; display?: string };
 		output_config?: { effort?: string };
 		anthropic_beta?: string[];
+		reasoning?: { effort?: string };
 	};
 }
 
@@ -139,6 +144,51 @@ describe("Bedrock thinking payload", () => {
 		expect(payload.additionalModelRequestFields?.thinking).toEqual({ type: "adaptive" });
 		expect(payload.additionalModelRequestFields?.output_config).toEqual({ effort: "high" });
 		expect(payload.additionalModelRequestFields?.anthropic_beta).toBeUndefined();
+	});
+});
+
+describe("Bedrock OpenAI reasoning payload", () => {
+	const baseModel = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
+	const model: Model<"bedrock-converse-stream"> = {
+		...baseModel,
+		id: "global.openai.gpt-5.6-sol",
+		name: "GPT 5.6 Sol",
+		reasoning: true,
+		thinkingLevelMap: { off: "none" },
+	};
+
+	it.each(["low", "medium", "high", "xhigh", "max"] as const)(
+		"nests %s effort in additionalModelRequestFields",
+		async (reasoning) => {
+			let capturedPayload: BedrockThinkingPayload | undefined;
+			const stream = streamBedrockSimple(model, makeContext(), {
+				reasoning,
+				onPayload: (payload) => {
+					capturedPayload = payload as BedrockThinkingPayload;
+					throw new PayloadCaptured();
+				},
+			});
+			for await (const event of stream) {
+				if (event.type === "error") break;
+			}
+
+			expect(capturedPayload?.additionalModelRequestFields?.reasoning).toEqual({ effort: reasoning });
+		},
+	);
+
+	it("emits the model's explicit off value when reasoning is omitted", async () => {
+		let capturedPayload: BedrockThinkingPayload | undefined;
+		const stream = streamBedrockSimple(model, makeContext(), {
+			onPayload: (payload) => {
+				capturedPayload = payload as BedrockThinkingPayload;
+				throw new PayloadCaptured();
+			},
+		});
+		for await (const event of stream) {
+			if (event.type === "error") break;
+		}
+
+		expect(capturedPayload?.additionalModelRequestFields?.reasoning).toEqual({ effort: "none" });
 	});
 });
 
