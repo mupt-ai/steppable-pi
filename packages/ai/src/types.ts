@@ -189,6 +189,8 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	 * its body stream is consumed.
 	 */
 	onResponse?: (response: ProviderResponse, model: Model<Api>) => void | Promise<void>;
+	/** Emit raw provider stream events alongside normalized assistant events. */
+	emitProviderEvents?: boolean;
 	temperature?: number;
 	/**
 	 * Arbitrary sampling parameters merged into the request body as-is, after the named request
@@ -365,6 +367,8 @@ export interface TextContent {
 	type: "text";
 	text: string;
 	textSignature?: string; // e.g., for OpenAI responses, message metadata (legacy id string or TextSignatureV1 JSON)
+	/** Provider-native output annotations, such as OpenAI Responses citations. Their fields are flat. */
+	annotations?: Array<Record<string, string | number | boolean | null>>;
 }
 
 export interface ThinkingContent {
@@ -391,6 +395,19 @@ export interface ToolCall {
 	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
 	/** OpenAI Responses namespace for calls to dynamically loaded or namespaced tools. */
 	namespace?: string;
+}
+
+export interface ServerToolCallContent {
+	type: "serverToolCall";
+	id: string;
+	name: string;
+	arguments: JsonObject;
+}
+
+export interface ToolSearchResultContent {
+	type: "toolSearchResult";
+	toolUseId: string;
+	content: Array<{ type?: "tool_reference"; tool_name: string }>;
 }
 
 export interface Usage {
@@ -514,7 +531,7 @@ export interface UserMessage {
 
 export interface AssistantMessage {
 	role: "assistant";
-	content: (TextContent | ThinkingContent | ToolCall)[];
+	content: (TextContent | ThinkingContent | ToolCall | ServerToolCallContent | ToolSearchResultContent)[];
 	api: Api;
 	provider: ProviderId;
 	model: string;
@@ -602,6 +619,11 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	description: string;
 	parameters: TParameters;
 	constrainedSampling?: false | ConstrainedSamplingConfig;
+	/** Anthropic server tool type. Server tools do not emit an input_schema. */
+	type?: string;
+	serverTool?: boolean;
+	/** Ask providers with native deferred loading to defer this definition. */
+	deferLoading?: boolean;
 }
 
 export interface ToolReference {
@@ -651,6 +673,7 @@ export type TranscriptContext = {
  */
 export type AssistantMessageEvent =
 	| { type: "start"; partial: AssistantMessage }
+	| { type: "provider_event"; event: unknown }
 	| { type: "text_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "text_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
 	| { type: "text_end"; contentIndex: number; content: string; partial: AssistantMessage }
@@ -660,6 +683,20 @@ export type AssistantMessageEvent =
 	| { type: "toolcall_start"; contentIndex: number; partial: AssistantMessage }
 	| { type: "toolcall_delta"; contentIndex: number; delta: string; partial: AssistantMessage }
 	| { type: "toolcall_end"; contentIndex: number; toolCall: ToolCall; partial: AssistantMessage }
+	| { type: "server_tool_call_start"; contentIndex: number; partial: AssistantMessage }
+	| {
+			type: "server_tool_call_end";
+			contentIndex: number;
+			serverToolCall: ServerToolCallContent;
+			partial: AssistantMessage;
+	  }
+	| { type: "tool_search_result_start"; contentIndex: number; partial: AssistantMessage }
+	| {
+			type: "tool_search_result_end";
+			contentIndex: number;
+			toolSearchResult: ToolSearchResultContent;
+			partial: AssistantMessage;
+	  }
 	| {
 			type: "done";
 			reason: Extract<StopReason, "stop" | "length" | "toolUse" | "deferred">;
@@ -837,6 +874,13 @@ export interface AnthropicMessagesCompat {
 	 * with no permitted fallback targets.
 	 */
 	allowedFallbackModels?: AnthropicAllowedFallbackModel[];
+	/**
+	 * Whether the provider supports deferred tool definitions (`defer_loading`), which tool
+	 * search loads through `tool_reference` blocks. Tools marked `deferLoading` are sent
+	 * deferred only when this is true. Default: true for first-party Anthropic models
+	 * except Haiku and models older than Claude 4.5; false for other providers.
+	 */
+	supportsToolReferences?: boolean;
 }
 
 /** Compatibility settings for Amazon Bedrock models. */

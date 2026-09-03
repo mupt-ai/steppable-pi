@@ -109,11 +109,13 @@ describe("transcript system messages", () => {
 		expect(update?.content[0]?.text).toContain("<rules>\nnew rules\n</rules>");
 		expect(update?.content[0]?.text).toContain('Removed system prompt section "docs"');
 
-		// The placeholder is declared before any change so its scaffolding is cached from request one.
+		// Native tool changes engage with the first change, so a request without one keeps the
+		// plain tool list and beta set.
 		const initial = await capturePayload<AnthropicPayload>(anthropicNativeModel, {
 			messages: context.messages.slice(0, 2),
 		});
-		expect(initial.tools?.map((tool) => tool.name)).toEqual(["base_tool", "__pi_deferred_placeholder__"]);
+		expect(initial.tools?.map((tool) => tool.name)).toEqual(["base_tool"]);
+		expect(initial.betas ?? []).not.toContain("mid-conversation-tool-changes-2026-07-01");
 	});
 
 	test("sends the current Anthropic tool list when native tool changes cannot express the history", async () => {

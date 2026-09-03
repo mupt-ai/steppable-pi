@@ -3,6 +3,7 @@ import type {
 	BetaStopReason,
 	BetaThinkingDroppedInputTransformation,
 	BetaTool,
+	BetaToolUnion,
 	BetaCacheControlEphemeral as CacheControlEphemeral,
 	BetaContentBlockParam as ContentBlockParam,
 	MessageCreateParamsStreaming,
@@ -16,10 +17,12 @@ import type {
 	AssistantMessage,
 	CacheRetention,
 	ImageContent,
+	JsonObject,
 	Message,
 	Model,
 	ProviderEnv,
 	ProviderHeaders,
+	ServerToolCallContent,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -29,6 +32,7 @@ import type {
 	Tool,
 	ToolCall,
 	ToolResultMessage,
+	ToolSearchResultContent,
 } from "../types.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
@@ -216,7 +220,22 @@ function getAnthropicCompat(model: Model<"anthropic-messages">) {
 		supportsStrictTools: model.compat?.supportsStrictTools ?? false,
 		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
 		supportsMidConvoToolChanges: model.compat?.supportsMidConvoToolChanges ?? false,
+		supportsToolReferences: model.compat?.supportsToolReferences ?? defaultSupportsToolReferences(model),
 	};
+}
+
+/**
+ * Default for `supportsToolReferences`: first-party Anthropic models except
+ * Haiku (rejects client-side tool_reference blocks) and models that predate
+ * tool search (Claude 3.x, Opus/Sonnet 4.0, Opus 4.1).
+ */
+function defaultSupportsToolReferences(model: Model<"anthropic-messages">): boolean {
+	if (model.provider !== "anthropic" || model.id.includes("haiku")) return false;
+	const version = model.id.match(/^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)/);
+	if (!version) return false;
+	const major = Number(version[1]);
+	const minor = version[2] && version[2].length < 8 ? Number(version[2]) : 0;
+	return major > 4 || (major === 4 && minor >= 5);
 }
 
 export interface AnthropicOptions extends StreamOptions {
@@ -518,7 +537,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 	const currentTools = getCurrentTools(normalizedContext.messages);
 
 	(async () => {
-		const providerThinkingLevel = model.compat?.supportsMidConvoEffort ? (options?.effort ?? "high") : undefined;
+		const providerThinkingLevel =
+			model.compat?.supportsMidConvoEffort && options?.thinkingEnabled !== false
+				? (options?.effort ?? "high")
+				: undefined;
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
@@ -596,7 +618,8 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			stream.push({ type: "start", partial: output });
 
 			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
-			const blocks = output.content as Block[];
+			type ServerBlock = (ServerToolCallContent | ToolSearchResultContent) & { index: number };
+			const blocks = output.content as Array<Block | ServerBlock>;
 
 			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
 				if (event.type === "message_start") {
@@ -657,6 +680,40 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 						};
 						output.content.push(block);
 						stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output });
+					} else if (event.content_block.type === "server_tool_use") {
+						const block: ServerBlock = {
+							type: "serverToolCall",
+							id: event.content_block.id,
+							name: event.content_block.name,
+							arguments: event.content_block.input as JsonObject,
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({
+							type: "server_tool_call_start",
+							contentIndex: output.content.length - 1,
+							partial: output,
+						});
+					} else if (event.content_block.type === "tool_search_tool_result") {
+						const references =
+							event.content_block.content.type === "tool_search_tool_search_result"
+								? event.content_block.content.tool_references
+								: [];
+						const block: ServerBlock = {
+							type: "toolSearchResult",
+							toolUseId: event.content_block.tool_use_id,
+							content: references.map((reference) => ({
+								type: "tool_reference",
+								tool_name: reference.tool_name,
+							})),
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({
+							type: "tool_search_result_start",
+							contentIndex: output.content.length - 1,
+							partial: output,
+						});
 					} else if (event.content_block.type === "tool_use") {
 						const block: Block = {
 							type: "toolCall",
@@ -734,6 +791,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 								type: "thinking_end",
 								contentIndex: index,
 								content: block.thinking,
+								partial: output,
+							});
+						} else if (block.type === "serverToolCall") {
+							stream.push({
+								type: "server_tool_call_end",
+								contentIndex: index,
+								serverToolCall: block,
+								partial: output,
+							});
+						} else if (block.type === "toolSearchResult") {
+							stream.push({
+								type: "tool_search_result_end",
+								contentIndex: index,
+								toolSearchResult: block,
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
@@ -1025,7 +1096,7 @@ function getBetaFeatures(
 		features.push(INTERLEAVED_THINKING_BETA);
 	}
 	if (shouldUseServerSideFallbackBeta(model)) features.push(SERVER_SIDE_FALLBACK_BETA);
-	if (model.compat?.supportsMidConvoEffort === true) {
+	if (model.compat?.supportsMidConvoEffort === true && options?.thinkingEnabled !== false) {
 		features.push(MID_CONVERSATION_OUTPUT_CONFIG_BETA, THINKING_BINDING_CONTROLS_BETA);
 	}
 	if (nativeToolChanges) features.push(MID_CONVERSATION_TOOL_CHANGES_BETA);
@@ -1046,12 +1117,17 @@ function buildParams(
 	const conversationMessages = initialSystemMessage ? transformedMessages.slice(1) : transformedMessages;
 	// Native tool changes reference tools by name, so a redefined name cannot be expressed,
 	// and Anthropic rejects a tool list where every tool is deferred, so there must be an
-	// initial active tool to anchor the deferred ones. Otherwise the current tool list is sent.
+	// initial active tool to anchor the deferred ones. Later tools are declared deferred, so
+	// the provider must support deferred tools. They engage only once the transcript changes
+	// tools, so requests without tool changes keep the plain tool list and its beta set.
+	// Otherwise the current tool list is sent.
 	const initialTools = initialSystemMessage?.toolsAdded ?? [];
 	const nativeToolChanges =
 		compat.supportsMidConvoSystemMessages &&
 		compat.supportsMidConvoToolChanges &&
+		compat.supportsToolReferences &&
 		initialTools.length > 0 &&
+		hasLaterToolChanges(context.messages) &&
 		!hasToolRedefinitions(context.messages);
 	const converted = convertMessages(
 		conversationMessages,
@@ -1062,13 +1138,14 @@ function buildParams(
 		nativeToolChanges,
 	);
 	const activeEffort = options?.effort ?? "high";
+	// Managed-effort models carry the per-turn effort in a trailing positional
+	// system marker instead of disabling thinking, so an explicit off request
+	// bypasses the marker machinery entirely and lets the caller disable thinking.
+	const managedEffort = model.compat?.supportsMidConvoEffort === true && options?.thinkingEnabled !== false;
 	const betaFeatures = getBetaFeatures(model, context, isOAuthToken, nativeToolChanges, options);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages:
-			model.compat?.supportsMidConvoEffort === true
-				? insertThinkingLevelMessages(converted, activeEffort)
-				: converted.messages,
+		messages: managedEffort ? insertThinkingLevelMessages(converted, activeEffort) : converted.messages,
 		max_tokens: options?.maxTokens ?? model.maxTokens,
 		stream: true,
 		...(betaFeatures.length > 0 ? { betas: betaFeatures } : {}),
@@ -1119,9 +1196,10 @@ function buildParams(
 		// therefore only grows, keeping the cached prefix intact across tool changes.
 		const initialNames = new Set(initialTools.map((tool) => tool.name));
 		const laterTools = getDeclaredTools(context.messages).filter((tool) => !initialNames.has(tool.name));
+		const initial = splitClientDeferredTools(initialTools, conversationMessages, compat.supportsToolReferences);
 		params.tools = [
 			...convertTools(
-				initialTools,
+				initial.active,
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
@@ -1129,28 +1207,44 @@ function buildParams(
 			),
 			DEFERRED_TOOL_PLACEHOLDER,
 			...convertTools(
-				laterTools,
+				[...initial.deferred, ...laterTools],
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
-			).map((tool) => ({ ...tool, defer_loading: true })),
+				undefined,
+				true,
+			),
 		];
 	} else {
-		const tools = getCurrentTools(context.messages);
-		if (tools.length > 0) {
-			params.tools = convertTools(
-				tools,
-				isOAuthToken,
-				compat.supportsEagerToolInputStreaming,
-				compat.supportsStrictTools,
-				toolCacheControl,
-			);
+		const tools = splitClientDeferredTools(
+			getCurrentTools(context.messages),
+			conversationMessages,
+			compat.supportsToolReferences,
+		);
+		if (tools.active.length > 0) {
+			params.tools = [
+				...convertTools(
+					tools.active,
+					isOAuthToken,
+					compat.supportsEagerToolInputStreaming,
+					compat.supportsStrictTools,
+					toolCacheControl,
+				),
+				...convertTools(
+					tools.deferred,
+					isOAuthToken,
+					compat.supportsEagerToolInputStreaming,
+					compat.supportsStrictTools,
+					undefined,
+					true,
+				),
+			];
 		}
 	}
 
 	// Managed effort models always use adaptive thinking so prefix mismatches can
 	// be dropped instead of surfacing as persistent 400 responses.
-	if (model.compat?.supportsMidConvoEffort === true) {
+	if (managedEffort) {
 		params.thinking = {
 			type: "adaptive",
 			display: options?.thinkingDisplay ?? "summarized",
@@ -1207,6 +1301,40 @@ function buildParams(
 // Normalize tool call IDs to match Anthropic's required pattern and length
 function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
+}
+
+/** Whether any system message after the leading one adds or removes tools. */
+function hasLaterToolChanges(messages: Message[]): boolean {
+	return messages.some(
+		(message, index) =>
+			index > 0 &&
+			message.role === "system" &&
+			((message.toolsAdded?.length ?? 0) > 0 || (message.toolsRemoved?.length ?? 0) > 0),
+	);
+}
+
+/**
+ * Split tools into active definitions and caller-marked deferred ones (`Tool.deferLoading`).
+ * A marked tool the transcript already called stays active, and when every tool is marked
+ * they all stay active, since Anthropic rejects a tool list where every tool is deferred.
+ */
+function splitClientDeferredTools(
+	tools: Tool[],
+	messages: Message[],
+	enabled: boolean,
+): { active: Tool[]; deferred: Tool[] } {
+	if (!enabled) return { active: tools, deferred: [] };
+	const calledNames = new Set<string>();
+	for (const message of messages) {
+		if (message.role !== "assistant") continue;
+		for (const block of message.content) {
+			if (block.type === "toolCall") calledNames.add(block.name);
+		}
+	}
+	const isDeferred = (tool: Tool) => tool.deferLoading === true && !calledNames.has(tool.name);
+	const active = tools.filter((tool) => !isDeferred(tool));
+	const deferred = tools.filter(isDeferred);
+	return active.length > 0 ? { active, deferred } : { active: deferred, deferred: [] };
 }
 
 function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
@@ -1352,6 +1480,25 @@ function convertMessages(
 							signature: thinkingSignature,
 						});
 					}
+				} else if (block.type === "serverToolCall") {
+					blocks.push({
+						type: "server_tool_use",
+						id: block.id,
+						name: block.name,
+						input: block.arguments,
+					} as ContentBlockParam);
+				} else if (block.type === "toolSearchResult") {
+					blocks.push({
+						type: "tool_search_tool_result",
+						tool_use_id: block.toolUseId,
+						content: {
+							type: "tool_search_tool_search_result",
+							tool_references: block.content.map((reference) => ({
+								type: "tool_reference",
+								tool_name: reference.tool_name,
+							})),
+						},
+					} as ContentBlockParam);
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",
@@ -1460,10 +1607,19 @@ function convertTools(
 	supportsEagerToolInputStreaming: boolean,
 	supportsStrictTools: boolean,
 	cacheControl?: CacheControlEphemeral,
-): BetaTool[] {
+	deferLoading = false,
+): BetaToolUnion[] {
 	if (!tools) return [];
 
 	return tools.map((tool, index) => {
+		if (tool.serverTool === true && tool.type !== undefined) {
+			return {
+				name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
+				type: tool.type,
+				...(deferLoading ? { defer_loading: true } : {}),
+				...(cacheControl && index === tools.length - 1 ? { cache_control: cacheControl } : {}),
+			} as BetaToolUnion;
+		}
 		const strict = resolveJsonSchemaStrictSampling(tool, supportsStrictTools);
 		const parameters = getJsonSchemaToolParameters(tool, strict);
 		const schema = parameters as { properties?: unknown; required?: string[] };
@@ -1486,6 +1642,7 @@ function convertTools(
 			...(supportsEagerToolInputStreaming ? { eager_input_streaming: true } : {}),
 			...(strict === true ? { strict: true } : {}),
 			input_schema: inputSchema,
+			...(deferLoading ? { defer_loading: true } : {}),
 			...(cacheControl && index === tools.length - 1 ? { cache_control: cacheControl } : {}),
 		};
 	});

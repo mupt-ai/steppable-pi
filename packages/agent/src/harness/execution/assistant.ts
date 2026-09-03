@@ -92,8 +92,8 @@ function createRequestOptions(
 
 function isUpdateEvent(
 	event: AssistantMessageEvent,
-): event is Exclude<AssistantMessageEvent, { type: "start" | "done" | "error" }> {
-	return event.type !== "start" && event.type !== "done" && event.type !== "error";
+): event is Exclude<AssistantMessageEvent, { type: "start" | "provider_event" | "done" | "error" }> {
+	return event.type !== "start" && event.type !== "provider_event" && event.type !== "done" && event.type !== "error";
 }
 
 export async function consumeAssistantStream(

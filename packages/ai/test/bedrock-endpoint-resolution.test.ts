@@ -1,3 +1,4 @@
+import { NodeHttpHandler } from "@smithy/node-http-handler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bedrockMock = vi.hoisted(() => ({
@@ -55,6 +56,7 @@ const context: Context = {
 const originalAwsRegion = process.env.AWS_REGION;
 const originalAwsDefaultRegion = process.env.AWS_DEFAULT_REGION;
 const originalAwsProfile = process.env.AWS_PROFILE;
+const originalBunVersion = process.versions.bun;
 
 beforeEach(() => {
 	bedrockMock.constructorCalls.length = 0;
@@ -80,6 +82,12 @@ afterEach(() => {
 		delete process.env.AWS_PROFILE;
 	} else {
 		process.env.AWS_PROFILE = originalAwsProfile;
+	}
+
+	if (originalBunVersion === undefined) {
+		delete process.versions.bun;
+	} else {
+		Object.defineProperty(process.versions, "bun", { configurable: true, value: originalBunVersion });
 	}
 });
 
@@ -195,6 +203,15 @@ describe("bedrock endpoint resolution", () => {
 		expect(config.profile).toBe("bedrock-profile");
 		expect(config.token).toBeUndefined();
 		expect(config.authSchemePreference).toBeUndefined();
+	});
+
+	it("uses the HTTP/1 handler under Bun", async () => {
+		Object.defineProperty(process.versions, "bun", { configurable: true, value: "1.2.0" });
+		const model = getModel("amazon-bedrock", "us.anthropic.claude-opus-4-8");
+
+		const config = await captureClientConfig(model);
+
+		expect(config.requestHandler).toBeInstanceOf(NodeHttpHandler);
 	});
 
 	it("uses the generic API key option as a Bedrock bearer token", async () => {
