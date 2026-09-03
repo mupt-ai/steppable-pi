@@ -296,6 +296,7 @@
 
 ### Fixed
 
+- Fixed Anthropic OAuth requests identifying as an obsolete Claude Code version that Claude Fable 5 rejects.
 - Fixed Anthropic Messages requests with client-marked `deferLoading` tools: marked tools now join the deferred batch instead of receiving `cache_control` alongside `defer_loading`, which the API rejects when a deferred tool is last in the list.
 - Fixed Anthropic server tool definitions (e.g. `tool_search_tool_regex_20251119`) to omit the `description` field the API rejects as an extra input.
 - Fixed Anthropic tool results whose content is empty after conversion (e.g. only tool references) to skip the sibling text block instead of emitting an empty one the API rejects.
