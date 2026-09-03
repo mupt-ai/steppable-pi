@@ -84,6 +84,19 @@ async function capture(
 
 const user = (text: string, timestamp: number) => ({ role: "user" as const, content: text, timestamp });
 
+async function captureWithFetch(
+	model: Model<"anthropic-messages">,
+	context: Context,
+	fetchImpl: typeof fetch,
+): Promise<AssistantMessage> {
+	return stream(model, context, {
+		apiKey: "test-key",
+		cacheRetention: "none",
+		thinkingEnabled: false,
+		fetch: fetchImpl,
+	}).result();
+}
+
 function effortMessages(payload: CapturedPayload): WireMessage[] {
 	return payload.messages.filter((message) => message.role === "system");
 }
@@ -155,6 +168,43 @@ describe("Anthropic mid-conversation effort", () => {
 		expect(payload.messages).toEqual([{ role: "user", content: "one" }]);
 		expect(payload.output_config).toEqual({ effort: "low" });
 		expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
+		expect(message.providerThinkingLevel).toBeUndefined();
+	});
+
+	it("omits effort machinery for an explicit off request", async () => {
+		let payload: CapturedPayload | undefined;
+		let betaHeader: string | null = null;
+		const events = [
+			{
+				type: "message_start",
+				message: {
+					id: "msg_test",
+					model: "claude-fable-5-1",
+					usage: { input_tokens: 1, output_tokens: 0 },
+				},
+			},
+			{
+				type: "message_delta",
+				delta: { stop_reason: "end_turn" },
+				usage: { output_tokens: 1 },
+			},
+			{ type: "message_stop" },
+		];
+		const body = events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join("");
+		const fetchImpl: typeof fetch = async (input, init) => {
+			const request = input instanceof Request ? input : new Request(input, init);
+			betaHeader = request.headers.get("anthropic-beta");
+			const parsed = JSON.parse(await request.text()) as CapturedPayload;
+			payload = parsed;
+			return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+		};
+		const model = managedModel();
+		const message = await captureWithFetch(model, { messages: [user("one", 1)] }, fetchImpl);
+
+		expect(payload?.thinking).toBeUndefined();
+		expect(payload?.output_config).toBeUndefined();
+		expect(payload?.messages).toEqual([{ role: "user", content: "one" }]);
+		expect(betaHeader).toBeNull();
 		expect(message.providerThinkingLevel).toBeUndefined();
 	});
 

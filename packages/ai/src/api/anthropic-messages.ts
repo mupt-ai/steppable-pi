@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type {
 	BetaStopReason,
 	BetaThinkingDroppedInputTransformation,
-	BetaTool,
+	BetaToolUnion,
 	BetaCacheControlEphemeral as CacheControlEphemeral,
 	BetaContentBlockParam as ContentBlockParam,
 	MessageCreateParamsStreaming,
@@ -22,6 +22,7 @@ import type {
 	Model,
 	ProviderEnv,
 	ProviderHeaders,
+	ServerToolCallContent,
 	SimpleStreamOptions,
 	StopReason,
 	StreamFunction,
@@ -31,6 +32,7 @@ import type {
 	Tool,
 	ToolCall,
 	ToolResultMessage,
+	ToolSearchResultContent,
 } from "../types.ts";
 import { splitDeferredTools } from "../utils/deferred-tools.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
@@ -510,7 +512,10 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 	const stream = new AssistantMessageEventStream();
 
 	(async () => {
-		const providerThinkingLevel = model.compat?.supportsMidConvoEffort ? (options?.effort ?? "high") : undefined;
+		const providerThinkingLevel =
+			model.compat?.supportsMidConvoEffort && options?.thinkingEnabled !== false
+				? (options?.effort ?? "high")
+				: undefined;
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
@@ -588,7 +593,8 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			stream.push({ type: "start", partial: output });
 
 			type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string })) & { index: number };
-			const blocks = output.content as Block[];
+			type ServerBlock = (ServerToolCallContent | ToolSearchResultContent) & { index: number };
+			const blocks = output.content as Array<Block | ServerBlock>;
 
 			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
 				if (event.type === "message_start") {
@@ -648,6 +654,40 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 						};
 						output.content.push(block);
 						stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output });
+					} else if (event.content_block.type === "server_tool_use") {
+						const block: ServerBlock = {
+							type: "serverToolCall",
+							id: event.content_block.id,
+							name: event.content_block.name,
+							arguments: event.content_block.input,
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({
+							type: "server_tool_call_start",
+							contentIndex: output.content.length - 1,
+							partial: output,
+						});
+					} else if (event.content_block.type === "tool_search_tool_result") {
+						const references =
+							event.content_block.content.type === "tool_search_tool_search_result"
+								? event.content_block.content.tool_references
+								: [];
+						const block: ServerBlock = {
+							type: "toolSearchResult",
+							toolUseId: event.content_block.tool_use_id,
+							content: references.map((reference) => ({
+								type: "tool_reference",
+								tool_name: reference.tool_name,
+							})),
+							index: event.index,
+						};
+						output.content.push(block);
+						stream.push({
+							type: "tool_search_result_start",
+							contentIndex: output.content.length - 1,
+							partial: output,
+						});
 					} else if (event.content_block.type === "tool_use") {
 						const block: Block = {
 							type: "toolCall",
@@ -725,6 +765,20 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 								type: "thinking_end",
 								contentIndex: index,
 								content: block.thinking,
+								partial: output,
+							});
+						} else if (block.type === "serverToolCall") {
+							stream.push({
+								type: "server_tool_call_end",
+								contentIndex: index,
+								serverToolCall: block,
+								partial: output,
+							});
+						} else if (block.type === "toolSearchResult") {
+							stream.push({
+								type: "tool_search_result_end",
+								contentIndex: index,
+								toolSearchResult: block,
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
@@ -1011,7 +1065,7 @@ function getBetaFeatures(
 		features.push(INTERLEAVED_THINKING_BETA);
 	}
 	if (shouldUseServerSideFallbackBeta(model)) features.push(SERVER_SIDE_FALLBACK_BETA);
-	if (model.compat?.supportsMidConvoEffort === true) {
+	if (model.compat?.supportsMidConvoEffort === true && options?.thinkingEnabled !== false) {
 		features.push(MID_CONVERSATION_OUTPUT_CONFIG_BETA, THINKING_BINDING_CONTROLS_BETA);
 	}
 	return [...new Set(features)];
@@ -1031,6 +1085,7 @@ function buildParams(
 		{ ...context, messages: transformedMessages },
 		compat.supportsToolReferences,
 		normalizeToolName,
+		{ deferClientMarked: true },
 	);
 	let immediateTools = toolPlacement.immediate;
 	let deferredTools = [...toolPlacement.deferred.values()];
@@ -1049,13 +1104,14 @@ function buildParams(
 		model.compat?.supportsMidConvoEffort === true ? model.provider : undefined,
 	);
 	const activeEffort = options?.effort ?? "high";
+	// Managed-effort models carry the per-turn effort in a trailing positional
+	// system marker instead of disabling thinking, so an explicit off request
+	// bypasses the marker machinery entirely and lets the caller disable thinking.
+	const managedEffort = model.compat?.supportsMidConvoEffort === true && options?.thinkingEnabled !== false;
 	const betaFeatures = getBetaFeatures(model, context, isOAuthToken, options);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages:
-			model.compat?.supportsMidConvoEffort === true
-				? insertThinkingLevelMessages(converted, activeEffort)
-				: converted.messages,
+		messages: managedEffort ? insertThinkingLevelMessages(converted, activeEffort) : converted.messages,
 		max_tokens: options?.maxTokens ?? model.maxTokens,
 		stream: true,
 		...(betaFeatures.length > 0 ? { betas: betaFeatures } : {}),
@@ -1120,7 +1176,7 @@ function buildParams(
 
 	// Managed effort models always use adaptive thinking so prefix mismatches can
 	// be dropped instead of surfacing as persistent 400 responses.
-	if (model.compat?.supportsMidConvoEffort === true) {
+	if (managedEffort) {
 		params.thinking = {
 			type: "adaptive",
 			display: options?.thinkingDisplay ?? "summarized",
@@ -1318,6 +1374,25 @@ function convertMessages(
 							signature: thinkingSignature,
 						});
 					}
+				} else if (block.type === "serverToolCall") {
+					blocks.push({
+						type: "server_tool_use",
+						id: block.id,
+						name: block.name,
+						input: block.arguments,
+					} as ContentBlockParam);
+				} else if (block.type === "toolSearchResult") {
+					blocks.push({
+						type: "tool_search_tool_result",
+						tool_use_id: block.toolUseId,
+						content: {
+							type: "tool_search_tool_search_result",
+							tool_references: block.content.map((reference) => ({
+								type: "tool_reference",
+								tool_name: reference.tool_name,
+							})),
+						},
+					} as ContentBlockParam);
 				} else if (block.type === "toolCall") {
 					blocks.push({
 						type: "tool_use",
@@ -1428,10 +1503,18 @@ function convertTools(
 	supportsStrictTools: boolean,
 	cacheControl?: CacheControlEphemeral,
 	deferLoading = false,
-): BetaTool[] {
+): BetaToolUnion[] {
 	if (!tools) return [];
 
 	return tools.map((tool, index) => {
+		if (tool.serverTool === true && tool.type !== undefined) {
+			return {
+				name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
+				type: tool.type,
+				...(deferLoading ? { defer_loading: true } : {}),
+				...(cacheControl && index === tools.length - 1 ? { cache_control: cacheControl } : {}),
+			} as BetaToolUnion;
+		}
 		const strict = resolveJsonSchemaStrictSampling(tool, supportsStrictTools);
 		const parameters = getJsonSchemaToolParameters(tool, strict);
 		const schema = parameters as { properties?: unknown; required?: string[] };

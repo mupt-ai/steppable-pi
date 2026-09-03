@@ -9,6 +9,7 @@ export function splitDeferredTools(
 	context: Context,
 	enabled: boolean,
 	normalizeName: ToolNameNormalizer = identityToolName,
+	options?: { deferClientMarked?: boolean },
 ): { immediate: Tool[]; deferred: Map<string, Tool> } {
 	const uniqueTools = new Map<string, Tool>();
 	for (const tool of context.tools ?? []) uniqueTools.set(normalizeName(tool.name), tool);
@@ -26,6 +27,12 @@ export function splitDeferredTools(
 				const normalizedName = normalizeName(name);
 				if (!usedNames.has(normalizedName)) deferredNames.add(normalizedName);
 			}
+		}
+	}
+
+	if (options?.deferClientMarked === true) {
+		for (const [name, tool] of uniqueTools) {
+			if (tool.deferLoading === true && !usedNames.has(name)) deferredNames.add(name);
 		}
 	}
 

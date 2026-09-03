@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type BedrockOptions, stream as streamBedrock } from "../src/api/bedrock-converse-stream.ts";
+import {
+	type BedrockOptions,
+	stream as streamBedrock,
+	streamSimple as streamBedrockSimple,
+} from "../src/api/bedrock-converse-stream.ts";
 import { getModel } from "../src/compat.ts";
 import type { Context, Model } from "../src/types.ts";
 import { hasBedrockCredentials } from "./bedrock-utils.ts";
@@ -9,6 +13,7 @@ interface BedrockThinkingPayload {
 		thinking?: { type: string; budget_tokens?: number; display?: string };
 		output_config?: { effort?: string };
 		anthropic_beta?: string[];
+		reasoning?: { effort?: string };
 	};
 }
 
@@ -159,6 +164,43 @@ describe("Bedrock thinking payload", () => {
 		expect(payload.additionalModelRequestFields?.thinking).toEqual({ type: "adaptive" });
 		expect(payload.additionalModelRequestFields?.output_config).toEqual({ effort: "high" });
 		expect(payload.additionalModelRequestFields?.anthropic_beta).toBeUndefined();
+	});
+});
+
+describe("Bedrock OpenAI reasoning payload", () => {
+	const baseModel = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
+	const model: Model<"bedrock-converse-stream"> = {
+		...baseModel,
+		id: "global.openai.gpt-5.6-sol",
+		name: "GPT 5.6 Sol",
+		reasoning: true,
+		thinkingLevelMap: { off: "none" },
+	};
+
+	async function captureSimplePayload(reasoning?: "low" | "high"): Promise<BedrockThinkingPayload> {
+		let capturedPayload: BedrockThinkingPayload | undefined;
+		const s = streamBedrockSimple(model, makeContext(), {
+			reasoning,
+			onPayload: (payload) => {
+				capturedPayload = payload as BedrockThinkingPayload;
+				throw new PayloadCaptured();
+			},
+		});
+		for await (const event of s) {
+			if (event.type === "error") break;
+		}
+		if (!capturedPayload) throw new Error("Expected Bedrock payload to be captured before request abort");
+		return capturedPayload;
+	}
+
+	it("nests reasoning effort in additionalModelRequestFields", async () => {
+		const payload = await captureSimplePayload("high");
+		expect(payload.additionalModelRequestFields?.reasoning).toEqual({ effort: "high" });
+	});
+
+	it("emits the model's explicit off value when simple reasoning is omitted", async () => {
+		const payload = await captureSimplePayload();
+		expect(payload.additionalModelRequestFields?.reasoning).toEqual({ effort: "none" });
 	});
 });
 

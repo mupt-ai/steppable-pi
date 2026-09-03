@@ -128,7 +128,10 @@ export const stream: StreamFunction<"azure-openai-responses", AzureOpenAIRespons
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			stream.push({ type: "start", partial: output });
 
-			await processResponsesStream(openaiStream, output, stream, model, { grammarToolInputProperties });
+			await processResponsesStream(openaiStream, output, stream, model, {
+				emitProviderEvents: options?.emitProviderEvents,
+				grammarToolInputProperties,
+			});
 
 			if (options?.signal?.aborted) {
 				throw new Error("Request was aborted");
@@ -180,6 +183,7 @@ export const streamSimple: StreamFunction<"azure-openai-responses", SimpleStream
 	return stream(model, context, {
 		...base,
 		reasoningEffort,
+		emitProviderEvents: options?.emitProviderEvents,
 	} satisfies AzureOpenAIResponsesOptions);
 };
 
