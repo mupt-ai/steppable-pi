@@ -7,6 +7,7 @@ import { estimateContextTokens } from "../src/utils/estimate.ts";
 
 interface AnthropicToolPayload {
 	name: string;
+	type?: string;
 	description?: string;
 	defer_loading?: boolean;
 }
@@ -318,6 +319,44 @@ describe("deferred tools", () => {
 			expect(payload.tools?.map((tool) => tool.name)).toEqual(["base_tool", "late_tool"]);
 			expect(payload.tools?.every((tool) => !tool.defer_loading)).toBe(true);
 		}
+	});
+
+	it("defers caller-marked Anthropic tools", async () => {
+		const context: Context = {
+			messages: [makeUserMessage(1)],
+			tools: [makeTool("base_tool"), { ...makeTool("client_deferred"), deferLoading: true }],
+		};
+		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+
+		expect(payload.tools).toMatchObject([{ name: "base_tool" }, { name: "client_deferred", defer_loading: true }]);
+	});
+
+	it("keeps a previously used caller-marked tool immediate", async () => {
+		const context = makeContext([{ ...makeTool("base_tool"), deferLoading: true }, makeTool("other_tool")], []);
+		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+
+		expect(payload.tools?.find((tool) => tool.name === "base_tool")?.defer_loading).toBeUndefined();
+	});
+
+	it("emits Anthropic server tools without function-tool fields", async () => {
+		const context: Context = {
+			messages: [makeUserMessage(1)],
+			tools: [
+				{
+					name: "tool_search_tool_regex",
+					description: "",
+					parameters: Type.Object({}),
+					serverTool: true,
+					type: "tool_search_tool_regex_20251119",
+				},
+				makeTool("base_tool"),
+			],
+		};
+		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
+		const emitted = payload.tools?.find((tool) => tool.name === "tool_search_tool_regex");
+
+		expect(emitted).toMatchObject({ type: "tool_search_tool_regex_20251119" });
+		expect(emitted && "description" in emitted).toBe(false);
 	});
 
 	it("keeps one immediate Anthropic tool when every current tool is marked", async () => {

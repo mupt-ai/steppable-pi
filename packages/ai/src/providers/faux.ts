@@ -175,7 +175,7 @@ function contentToText(content: string | Array<TextContent | ImageContent>): str
 		.join("\n");
 }
 
-function assistantContentToText(content: Array<TextContent | ThinkingContent | ToolCall>): string {
+function assistantContentToText(content: AssistantMessage["content"]): string {
 	return content
 		.map((block) => {
 			if (block.type === "text") {
@@ -184,7 +184,10 @@ function assistantContentToText(content: Array<TextContent | ThinkingContent | T
 			if (block.type === "thinking") {
 				return block.thinking;
 			}
-			return `${block.name}:${JSON.stringify(block.arguments)}`;
+			if (block.type === "toolCall" || block.type === "serverToolCall") {
+				return `${block.name}:${JSON.stringify(block.arguments)}`;
+			}
+			return "";
 		})
 		.join("\n");
 }
@@ -404,6 +407,7 @@ async function streamWithDeltas(
 			continue;
 		}
 
+		if (block.type === "toolSearchResult") continue;
 		partial.content = [...partial.content, { type: "toolCall", id: block.id, name: block.name, arguments: {} }];
 		stream.push({ type: "toolcall_start", contentIndex: index, partial: { ...partial } });
 		for (const chunk of splitStringByTokenSize(JSON.stringify(block.arguments), minTokenSize, maxTokenSize)) {
@@ -417,7 +421,7 @@ async function streamWithDeltas(
 			stream.push({ type: "toolcall_delta", contentIndex: index, delta: chunk, partial: { ...partial } });
 		}
 		(partial.content[index] as ToolCall).arguments = block.arguments;
-		stream.push({ type: "toolcall_end", contentIndex: index, toolCall: block, partial: { ...partial } });
+		stream.push({ type: "toolcall_end", contentIndex: index, toolCall: block as ToolCall, partial: { ...partial } });
 	}
 
 	if (message.stopReason === "pending") {
