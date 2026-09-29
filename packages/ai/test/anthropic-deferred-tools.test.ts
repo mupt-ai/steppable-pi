@@ -1,13 +1,21 @@
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { streamSimple } from "../src/compat.ts";
-import type { Context, Model, Tool } from "../src/types.ts";
+import type { AssistantMessage, Context, Model, Tool, ToolResultMessage } from "../src/types.ts";
 
 class PayloadCaptured extends Error {}
+
+interface AnthropicContentBlock {
+	type: string;
+	text?: string;
+	tool_use_id?: string;
+	content?: string | Array<{ type: string; tool_name?: string }>;
+}
 
 interface AnthropicPayload {
 	betas?: string[];
 	tools?: Array<{ name: string; type?: string; description?: string; defer_loading?: boolean }>;
+	messages: Array<{ content: string | AnthropicContentBlock[] }>;
 }
 
 function tool(name: string, extra: Partial<Tool> = {}): Tool {
@@ -30,10 +38,14 @@ function model(id: string, compat: Model<"anthropic-messages">["compat"] = {}): 
 	};
 }
 
-async function capturePayload(target: Model<"anthropic-messages">, context: Context): Promise<AnthropicPayload> {
+async function capturePayload(
+	target: Model<"anthropic-messages">,
+	context: Context,
+	apiKey = "test-key",
+): Promise<AnthropicPayload> {
 	let captured: AnthropicPayload | undefined;
 	const stream = streamSimple(target, context, {
-		apiKey: "test-key",
+		apiKey,
 		onPayload: (payload) => {
 			captured = payload as AnthropicPayload;
 			throw new PayloadCaptured();
@@ -45,7 +57,115 @@ async function capturePayload(target: Model<"anthropic-messages">, context: Cont
 }
 
 const userMessage = { role: "user" as const, content: "hi", timestamp: 1 };
+
+function assistantCall(name: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "toolCall", id: "call_1", name, arguments: {} }],
+		api: "anthropic-messages",
+		provider: "anthropic",
+		model: "claude-opus-4-6",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "toolUse",
+		timestamp: 2,
+	};
+}
+
+function toolResult(addedToolNames: string[]): ToolResultMessage {
+	return {
+		role: "toolResult",
+		toolCallId: "call_1",
+		toolName: "base_tool",
+		content: [{ type: "text", text: "done" }],
+		addedToolNames,
+		isError: false,
+		timestamp: 3,
+	};
+}
+
+function loadedContext(tools: Tool[], addedToolNames = ["late_tool"], calledName = "base_tool"): Context {
+	return { messages: [userMessage, assistantCall(calledName), toolResult(addedToolNames)], tools };
+}
+
+function toolResultContent(payload: AnthropicPayload): AnthropicContentBlock[] {
+	for (const message of payload.messages) {
+		if (typeof message.content !== "string" && message.content.some((block) => block.type === "tool_result")) {
+			return message.content;
+		}
+	}
+	throw new Error("No tool result in payload");
+}
 const deferred = tool("client_deferred", { deferLoading: true });
+
+describe("tool-result loaded Anthropic tools", () => {
+	it("loads a tool at its tool-result marker", async () => {
+		const payload = await capturePayload(
+			model("claude-opus-4-6"),
+			loadedContext([tool("base_tool"), tool("late_tool")]),
+		);
+
+		expect(payload.tools).toMatchObject([{ name: "base_tool" }, { name: "late_tool", defer_loading: true }]);
+		expect(toolResultContent(payload)).toMatchObject([
+			{ type: "tool_result", tool_use_id: "call_1", content: [{ type: "tool_reference", tool_name: "late_tool" }] },
+			{ type: "text", text: "done" },
+		]);
+		expect(payload.betas ?? []).not.toContain("mid-conversation-tool-changes-2026-07-01");
+	});
+
+	it("does not resurrect a marked tool missing from the tools", async () => {
+		const payload = await capturePayload(model("claude-opus-4-6"), loadedContext([tool("base_tool")]));
+
+		expect(payload.tools?.map((entry) => entry.name)).toEqual(["base_tool"]);
+		expect(toolResultContent(payload)[0]?.content).toEqual("done");
+	});
+
+	it("keeps a tool immediate when it was called before its marker", async () => {
+		const payload = await capturePayload(
+			model("claude-opus-4-6"),
+			loadedContext([tool("base_tool"), tool("late_tool")], ["late_tool"], "late_tool"),
+		);
+
+		expect(payload.tools?.every((entry) => entry.defer_loading === undefined)).toBe(true);
+	});
+
+	it("matches OAuth-canonicalized markers to active tools", async () => {
+		const payload = await capturePayload(
+			model("claude-opus-4-6"),
+			loadedContext([tool("base_tool"), tool("read")], ["Read"]),
+			"sk-ant-oat-fake",
+		);
+
+		expect(payload.tools).toMatchObject([{ name: "base_tool" }, { name: "Read", defer_loading: true }]);
+		expect(toolResultContent(payload)[0]?.content).toEqual([{ type: "tool_reference", tool_name: "Read" }]);
+	});
+
+	it("deduplicates tools after OAuth canonicalization", async () => {
+		const payload = await capturePayload(
+			model("claude-opus-4-6"),
+			{ messages: [userMessage], tools: [tool("read"), tool("Read", { description: "Canonical definition" })] },
+			"sk-ant-oat-fake",
+		);
+
+		expect(payload.tools).toMatchObject([{ name: "Read", description: "Canonical definition" }]);
+	});
+
+	it("uses the normal tool list for models without tool references", async () => {
+		const payload = await capturePayload(
+			model("claude-haiku-4-5"),
+			loadedContext([tool("base_tool"), tool("late_tool")]),
+		);
+
+		expect(payload.tools?.map((entry) => entry.name)).toEqual(["base_tool", "late_tool"]);
+		expect(payload.tools?.every((entry) => entry.defer_loading === undefined)).toBe(true);
+	});
+});
 
 describe("client-deferred Anthropic tools", () => {
 	it("defers caller-marked tools", async () => {

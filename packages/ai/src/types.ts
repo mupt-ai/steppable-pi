@@ -562,6 +562,11 @@ export type ToolResultMessage<TDetails = JsonValue> = IsJsonCompatible<TDetails>
 			details?: JsonRepresentation<TDetails>;
 			/** Usage from the tool execution itself, if available. Not part of main LLM context accounting. */
 			usage?: Usage;
+			/**
+			 * Names of current tools a client-side tool search loaded with this result. Anthropic keeps
+			 * them deferred and loads them with `tool_reference` blocks here; other providers ignore it.
+			 */
+			addedToolNames?: string[];
 			isError: boolean;
 			timestamp: number; // Unix timestamp in milliseconds
 		}

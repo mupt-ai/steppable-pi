@@ -1129,6 +1129,13 @@ function buildParams(
 		initialTools.length > 0 &&
 		hasLaterToolChanges(context.messages) &&
 		!hasToolRedefinitions(context.messages);
+	const normalizeToolName = isOAuthToken ? toClaudeCodeName : (name: string) => name;
+	const placedTools = splitDeferredTools(
+		nativeToolChanges ? initialTools : getCurrentTools(context.messages),
+		conversationMessages,
+		compat.supportsToolReferences,
+		normalizeToolName,
+	);
 	const converted = convertMessages(
 		conversationMessages,
 		isOAuthToken,
@@ -1136,6 +1143,8 @@ function buildParams(
 		compat.allowEmptySignature,
 		model.compat?.supportsMidConvoEffort === true ? model.provider : undefined,
 		nativeToolChanges,
+		new Set(placedTools.deferred.map((tool) => normalizeToolName(tool.name))),
+		normalizeToolName,
 	);
 	const activeEffort = options?.effort ?? "high";
 	// Managed-effort models carry the per-turn effort in a trailing positional
@@ -1196,10 +1205,9 @@ function buildParams(
 		// therefore only grows, keeping the cached prefix intact across tool changes.
 		const initialNames = new Set(initialTools.map((tool) => tool.name));
 		const laterTools = getDeclaredTools(context.messages).filter((tool) => !initialNames.has(tool.name));
-		const initial = splitClientDeferredTools(initialTools, conversationMessages, compat.supportsToolReferences);
 		params.tools = [
 			...convertTools(
-				initial.active,
+				placedTools.active,
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
@@ -1207,7 +1215,7 @@ function buildParams(
 			),
 			DEFERRED_TOOL_PLACEHOLDER,
 			...convertTools(
-				[...initial.deferred, ...laterTools],
+				[...placedTools.deferred, ...laterTools],
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
@@ -1215,31 +1223,24 @@ function buildParams(
 				true,
 			),
 		];
-	} else {
-		const tools = splitClientDeferredTools(
-			getCurrentTools(context.messages),
-			conversationMessages,
-			compat.supportsToolReferences,
-		);
-		if (tools.active.length > 0) {
-			params.tools = [
-				...convertTools(
-					tools.active,
-					isOAuthToken,
-					compat.supportsEagerToolInputStreaming,
-					compat.supportsStrictTools,
-					toolCacheControl,
-				),
-				...convertTools(
-					tools.deferred,
-					isOAuthToken,
-					compat.supportsEagerToolInputStreaming,
-					compat.supportsStrictTools,
-					undefined,
-					true,
-				),
-			];
-		}
+	} else if (placedTools.active.length > 0) {
+		params.tools = [
+			...convertTools(
+				placedTools.active,
+				isOAuthToken,
+				compat.supportsEagerToolInputStreaming,
+				compat.supportsStrictTools,
+				toolCacheControl,
+			),
+			...convertTools(
+				placedTools.deferred,
+				isOAuthToken,
+				compat.supportsEagerToolInputStreaming,
+				compat.supportsStrictTools,
+				undefined,
+				true,
+			),
+		];
 	}
 
 	// Managed effort models always use adaptive thinking so prefix mismatches can
@@ -1314,35 +1315,72 @@ function hasLaterToolChanges(messages: Message[]): boolean {
 }
 
 /**
- * Split tools into active definitions and caller-marked deferred ones (`Tool.deferLoading`).
- * A marked tool the transcript already called stays active, and when every tool is marked
- * they all stay active, since Anthropic rejects a tool list where every tool is deferred.
+ * Split tools into active definitions and deferred ones: tools the caller marked
+ * `deferLoading` that the transcript has not called, and tools a tool result loaded
+ * (`addedToolNames`) that were not called before that load. When every tool would be
+ * deferred they all stay active, since Anthropic rejects a tool list where every tool is
+ * deferred.
  */
-function splitClientDeferredTools(
+function splitDeferredTools(
 	tools: Tool[],
 	messages: Message[],
 	enabled: boolean,
+	normalizeName: (name: string) => string,
 ): { active: Tool[]; deferred: Tool[] } {
-	if (!enabled) return { active: tools, deferred: [] };
+	// OAuth canonicalization can map two tools to one name; the later definition wins.
+	const uniqueTools = [...new Map(tools.map((tool) => [normalizeName(tool.name), tool])).values()];
+	if (!enabled) return { active: uniqueTools, deferred: [] };
 	const calledNames = new Set<string>();
+	const loadedNames = new Set<string>();
 	for (const message of messages) {
-		if (message.role !== "assistant") continue;
-		for (const block of message.content) {
-			if (block.type === "toolCall") calledNames.add(block.name);
+		if (message.role === "assistant") {
+			for (const block of message.content) {
+				if (block.type === "toolCall") calledNames.add(normalizeName(block.name));
+			}
+		} else if (message.role === "toolResult") {
+			for (const name of message.addedToolNames ?? []) {
+				if (!calledNames.has(normalizeName(name))) loadedNames.add(normalizeName(name));
+			}
 		}
 	}
-	const isDeferred = (tool: Tool) => tool.deferLoading === true && !calledNames.has(tool.name);
-	const active = tools.filter((tool) => !isDeferred(tool));
-	const deferred = tools.filter(isDeferred);
+	const isDeferred = (tool: Tool) => {
+		const name = normalizeName(tool.name);
+		return loadedNames.has(name) || (tool.deferLoading === true && !calledNames.has(name));
+	};
+	const active = uniqueTools.filter((tool) => !isDeferred(tool));
+	const deferred = uniqueTools.filter(isDeferred);
 	return active.length > 0 ? { active, deferred } : { active: deferred, deferred: [] };
 }
 
-function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
+function convertToolResult(
+	msg: ToolResultMessage,
+	isOAuthToken: boolean,
+	deferredToolNames: ReadonlySet<string>,
+	loadedToolNames: Set<string>,
+	normalizeToolName: (name: string) => string,
+): { toolResult: ContentBlockParam; siblingContent: ContentBlockParam[] } {
+	const references: Array<{ type: "tool_reference"; tool_name: string }> = [];
+	for (const name of msg.addedToolNames ?? []) {
+		const normalizedName = normalizeToolName(name);
+		if (!deferredToolNames.has(normalizedName) || loadedToolNames.has(normalizedName)) continue;
+		loadedToolNames.add(normalizedName);
+		references.push({ type: "tool_reference", tool_name: isOAuthToken ? toClaudeCodeName(name) : name });
+	}
+	const convertedContent = convertContentBlocks(msg.content);
+	// Anthropic rejects tool references mixed with ordinary tool-result content.
 	return {
-		type: "tool_result",
-		tool_use_id: msg.toolCallId,
-		content: convertContentBlocks(msg.content),
-		is_error: msg.isError,
+		toolResult: {
+			type: "tool_result",
+			tool_use_id: msg.toolCallId,
+			content: references.length > 0 ? references : convertedContent,
+			is_error: msg.isError,
+		},
+		siblingContent:
+			references.length === 0
+				? []
+				: typeof convertedContent === "string"
+					? [{ type: "text", text: convertedContent }]
+					: convertedContent,
 	};
 }
 
@@ -1358,9 +1396,12 @@ function convertMessages(
 	allowEmptySignature = false,
 	managedProvider?: string,
 	nativeToolChanges = false,
+	deferredToolNames: ReadonlySet<string> = new Set(),
+	normalizeToolName: (name: string) => string = (name) => name,
 ): ConvertedAnthropicMessages {
 	const params: MessageParam[] = [];
 	const assistantLevels = new Map<number, AnthropicEffort>();
+	const loadedToolNames = new Set<string>();
 	// Later system messages are held back and emitted directly before the next assistant
 	// message (or at the end of the transcript). Anthropic requires `tool_result` blocks to
 	// immediately follow their `tool_use`, so a system message between them is rejected; this
@@ -1525,18 +1566,28 @@ function convertMessages(
 		} else if (msg.role === "toolResult") {
 			// Collect all consecutive toolResult messages, needed for z.ai Anthropic endpoint.
 			const toolResults: ContentBlockParam[] = [];
+			const siblingContent: ContentBlockParam[] = [];
 			let j = i;
 			while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
-				toolResults.push(convertToolResult(transformedMessages[j] as ToolResultMessage));
+				const converted = convertToolResult(
+					transformedMessages[j] as ToolResultMessage,
+					isOAuthToken,
+					deferredToolNames,
+					loadedToolNames,
+					normalizeToolName,
+				);
+				toolResults.push(converted.toolResult);
+				siblingContent.push(...converted.siblingContent);
 				j++;
 			}
 
 			// Skip the messages we've already processed.
 			i = j - 1;
 
+			// Displaced reference-bearing results must follow every tool_result block.
 			params.push({
 				role: "user",
-				content: toolResults,
+				content: [...toolResults, ...siblingContent],
 			});
 		}
 	}
