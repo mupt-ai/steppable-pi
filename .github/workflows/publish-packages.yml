@@ -81,5 +81,7 @@ jobs:
           npm pkg set --prefix packages/ai name=@mupt-ai/pi-ai version="$MUPT_VERSION"
           npm pkg set --prefix packages/ai repository.url=git+https://github.com/mupt-ai/steppable-pi.git
 
+      # prepublishOnly would regenerate the model data from live provider APIs,
+      # so publish the build that was validated above.
       - name: Publish
-        run: npm publish --workspace packages/ai --tag latest --provenance
+        run: npm publish --workspace packages/ai --tag latest --provenance --ignore-scripts
